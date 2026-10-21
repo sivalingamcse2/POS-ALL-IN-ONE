@@ -3,8 +3,8 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// Local Data Path
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// Local Data Path — stored in C:\Users\ADMIN\Desktop\POS2\
+const DATA_DIR = 'C:\\Users\\ADMIN\\Desktop\\POS2';
 const LOCAL_DB_FILE = path.join(DATA_DIR, 'local_db.json');
 
 // Ensure data directory exists
