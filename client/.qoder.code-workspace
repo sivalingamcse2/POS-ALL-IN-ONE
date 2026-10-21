@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "../.qoder"
+		},
+		{
+			"path": "../.vscode"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../database"
+		},
+		{
+			"path": "../server"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": ".qoder"
+	}
+}
