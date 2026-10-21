@@ -1,0 +1,27 @@
+{
+  "name": "pos",
+  "version": "1.0.0",
+  "description": "An enterprise, dual-concept Point of Sale (POS) and inventory management system designed for **Supermarkets, Grocery Stores, Convenience Retail** and **Restaurants, Cafes, and Dining Hospitality**.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sivalingamcse2/POS-ALL-IN-ONE.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/sivalingamcse2/POS-ALL-IN-ONE/issues"
+  },
+  "homepage": "https://github.com/sivalingamcse2/POS-ALL-IN-ONE#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "pg": "^8.23.1"
+  }
+}
