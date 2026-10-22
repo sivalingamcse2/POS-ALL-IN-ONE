@@ -14,8 +14,8 @@ client/build/
 server/.env
 
 # Database files (local data - keep private)
+/local_db.json
 server/data/local_db.json
-C:/Users/ADMIN/Desktop/POS2/
 
 # Logs
 *.log
