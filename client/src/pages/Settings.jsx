@@ -662,7 +662,7 @@ export default function Settings() {
       {activeTab === 'restaurant' && (
         <div className="space-y-6">
           {/* Info Banner */}
-          <div className="card bg-blue-50 border-l-4 border-blue-500">
+          <div className="card !bg-blue-50 !border-l-4 !border-l-blue-500">
             <div className="flex items-start gap-3">
               <svg className="w-6 h-6 text-blue-500 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -682,7 +682,7 @@ export default function Settings() {
           {restaurantsLoading && <div role="status" className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">Loading stores…</div>}
 
           {isAdmin && (
-          <div className="card border-t-4 border-emerald-600 shadow-sm">
+          <div className="card !border-t-4 !border-t-emerald-600 shadow-sm">
             <p className="mb-1 text-xs font-extrabold uppercase tracking-[0.16em] text-emerald-700">Store directory</p>
             <h2 className="mb-6 text-xl font-extrabold text-slate-900">{editingResId ? 'Edit Store or Branch' : 'Add a Store or Branch'}</h2>
               <form onSubmit={handleSaveRestaurant} className="space-y-5">
@@ -1039,7 +1039,7 @@ export default function Settings() {
 
       {activeTab === 'security' && (
         <section className="space-y-5">
-          <div className={`card border-l-4 ${serverMode ? 'border-emerald-500' : 'border-amber-400'}`}>
+          <div className={`card !border-l-4 ${serverMode ? '!border-l-emerald-500' : '!border-l-amber-400'}`}>
             <p className={`text-xs font-extrabold uppercase tracking-wide ${serverMode ? 'text-emerald-700' : 'text-amber-700'}`}>{serverMode ? 'Server policy' : 'Demo policy only'}</p>
             <h2 className="mt-1 text-xl font-extrabold text-slate-900">Security & Audit</h2>
             <p className="mt-2 text-sm text-slate-600">{serverMode ? 'This policy is stored on the server and recorded in the audit log when saved.' : 'These example policies are saved in this browser only; they do not change authentication, session expiry, or MFA enforcement.'}</p>
@@ -1248,7 +1248,7 @@ export default function Settings() {
       {/* Active Directory-style user permissions */}
       {activeTab === 'users' && (
         <div className="space-y-6">
-          <div className="card border-l-4 border-primary-500">
+          <div className="card !border-l-4 !border-l-primary-500">
             <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-primary-600 mb-1">Privilege Management</p>
