@@ -187,16 +187,7 @@ export default function Inventory() {
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold text-gray-900 flex items-center gap-2">
-            <span>📦</span> Advanced Inventory & Expiry Control
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Supermarket Barcodes, Weighing Scale Items, Batch/Lot Tracking & Restaurant Ingredients
-          </p>
-        </div>
-
+      <div className="flex flex-col md:flex-row justify-end items-start md:items-center gap-4">
         <div className="flex flex-wrap gap-2 print:hidden">
           <button
             onClick={() => {
