@@ -51,6 +51,7 @@ export default function Layout() {
   const drawerConfigs = {
     '/mobile-pos': { title: 'MOBILE POS', width: 'w-full max-w-[440px]' },
     '/pos': { title: 'RESTAURANT POS', width: 'w-[calc(100vw-300px)] max-w-[1240px]' },
+    '/kds': { title: 'KITCHEN (KDS)', width: 'w-[calc(100vw-300px)] max-w-[1100px]' },
   };
 
   const openDrawer = path => {
