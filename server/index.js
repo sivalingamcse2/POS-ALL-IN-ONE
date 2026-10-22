@@ -13,6 +13,7 @@ const menuRoutes = require('./routes/menu');
 const posRoutes = require('./routes/pos');
 const inventoryRoutes = require('./routes/inventory');
 const reportRoutes = require('./routes/reports');
+const settingsRoutes = require('./routes/settings');
 const storageRoutes = require('./routes/storage');
 
 const app = express();
@@ -155,6 +156,7 @@ app.use('/api/menu', menuRoutes);
 app.use('/api/pos', posRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/settings', settingsRoutes);
 app.use('/api/storage', storageRoutes);
 
 // Health check

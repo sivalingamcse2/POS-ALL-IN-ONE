@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { restaurantApi } from '../api';
+import { restaurantApi, settingsApi, userApi } from '../api';
 
 const permissionGroups = [
   { key: 'Dashboard', label: 'Dashboard', description: 'Overview and performance information' },
@@ -54,6 +54,14 @@ const readLocalObject = (key, fallback) => {
     return fallback;
   }
 };
+
+const normalizeServerLogs = rows => (rows || []).map(row => ({
+  id: row.id,
+  timestamp: row.created_at || row.timestamp,
+  username: row.username || 'Admin',
+  action: row.action,
+  details: row.details || '',
+}));
 
 const emptyUserPermissions = () => permissionGroups.reduce((permissions, group) => {
   permissions[group.key] = permissionActions.reduce((actions, action) => {
@@ -115,6 +123,13 @@ export default function Settings() {
   }));
   const [auditLogs, setAuditLogs] = useState(() => readLocalArray('pos_settings_audit'));
   const [settingsSaved, setSettingsSaved] = useState(false);
+  // Server persistence: true once the settings API answers; false = offline demo (localStorage).
+  const [serverMode, setServerMode] = useState(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsNotice, setSettingsNotice] = useState('');
+  const [settingsError, setSettingsError] = useState('');
+  const [assignedItemIds, setAssignedItemIds] = useState([]);
+  const [menuReloadKey, setMenuReloadKey] = useState(0);
 
   const selectedAccessUser = accessUsers.find(accessUser => String(accessUser.id) === String(selectedAccessUserId));
   const selectedAccessRole = roles
@@ -236,16 +251,41 @@ export default function Settings() {
       String(accessUser.id) === String(selectedAccessUser.id) ? updatedUser : accessUser
     )));
     setSettingsSaved(false);
-    setAuditLogs(logs => [{
-      id: Date.now(),
-      timestamp: new Date().toISOString(),
-      username: user?.username || 'Admin',
-      action: 'Updated demo user access',
-      details: `Updated ${selectedAccessUser.username}`,
-    }, ...logs].slice(0, 200));
+    if (serverMode) {
+      const assignedIds = (updatedUser.restaurants || []).map(item => Number(item.id));
+      userApi.update(selectedAccessUser.id, {
+        username: updatedUser.username,
+        email: updatedUser.email || '',
+        full_name: updatedUser.full_name || updatedUser.username,
+        employee_id: String(updatedUser.employee_id || 'SELF'),
+        role_id: Number(updatedUser.role_id) || 0,
+        restaurant_ids: assignedIds.length ? assignedIds : [Number(updatedUser.restaurant_id) || 1],
+        account_status: updatedUser.account_status || 'active',
+      })
+        .then(() => {
+          if (String(selectedAccessUser.id) === String(user?.id)) {
+            const nextUser = { ...user, role_id: updatedUser.role_id, role_name: updatedUser.role_name, role: updatedUser.role_name, restaurants: updatedUser.restaurants, restaurant_id: updatedUser.restaurant_id };
+            setUser(nextUser);
+            localStorage.setItem('user', JSON.stringify(nextUser));
+          }
+          settingsApi.getAuditLog()
+            .then(({ data }) => setAuditLogs(normalizeServerLogs(data)))
+            .catch(() => {});
+        })
+        .catch(() => setServerMode(false));
+    }
   };
 
   const toggleMenuAssignment = (itemId) => {
+    if (serverMode) {
+      setAssignedItemIds(previous => (
+        previous.map(String).includes(String(itemId))
+          ? previous.filter(id => String(id) !== String(itemId))
+          : [...previous, Number(itemId)]
+      ));
+      setSettingsSaved(false);
+      return;
+    }
     const restaurantId = String(selectedMenuRestaurantId);
     setMenuItems(previous => previous.map(item => {
       if (String(item.id) !== String(itemId)) return item;
@@ -272,6 +312,54 @@ export default function Settings() {
     }, ...logs].slice(0, 200));
   };
 
+  const saveMenuAssignment = async () => {
+    if (!serverMode || !selectedMenuRestaurantId) return;
+    setSettingsSaving(true);
+    setSettingsError('');
+    setSettingsNotice('');
+    try {
+      await settingsApi.saveMenuAssignment(selectedMenuRestaurantId, assignedItemIds);
+      setMenuReloadKey(key => key + 1);
+      setSettingsSaved(true);
+      setSettingsNotice('Menu assignment saved on the server.');
+      refreshAuditLog();
+    } catch (error) {
+      if (error.response) {
+        setSettingsError(error.response?.data?.error || 'Unable to save the menu assignment.');
+      } else {
+        setServerMode(false);
+      }
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const saveSecurityPolicy = async () => {
+    if (!serverMode) return;
+    setSettingsSaving(true);
+    setSettingsError('');
+    setSettingsNotice('');
+    try {
+      const { data } = await settingsApi.saveSecurityPolicy({
+        sessionTimeoutMinutes: Number(securityPolicy.sessionTimeoutMinutes),
+        requireStrongPasswords: Boolean(securityPolicy.requireStrongPasswords),
+        maxFailedLogins: Number(securityPolicy.maxFailedLogins),
+      });
+      if (data.policy) setSecurityPolicy(previous => ({ ...previous, ...data.policy }));
+      setSettingsSaved(true);
+      setSettingsNotice(data.audit_warning || 'Security policy saved on the server.');
+      refreshAuditLog();
+    } catch (error) {
+      if (error.response) {
+        setSettingsError(error.response?.data?.error || 'Unable to save the security policy.');
+      } else {
+        setServerMode(false);
+      }
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   const getSettingsSnapshot = () => ({
     version: 1,
     exportedAt: new Date().toISOString(),
@@ -292,7 +380,30 @@ export default function Settings() {
     auditLogs,
   });
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
+    if (serverMode) {
+      setSettingsSaving(true);
+      setSettingsError('');
+      setSettingsNotice('');
+      try {
+        const { data } = await settingsApi.saveSecurityPolicy({
+          sessionTimeoutMinutes: Number(securityPolicy.sessionTimeoutMinutes),
+          requireStrongPasswords: Boolean(securityPolicy.requireStrongPasswords),
+          maxFailedLogins: Number(securityPolicy.maxFailedLogins),
+        });
+        if (data.policy) setSecurityPolicy(previous => ({ ...previous, ...data.policy }));
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(getSettingsSnapshot()));
+        localStorage.setItem('pos_settings_menu_restaurant_id', String(selectedMenuRestaurantId || ''));
+        setSettingsNotice(data.audit_warning || 'Settings saved on the server.');
+        refreshAuditLog();
+      } catch (error) {
+        setSettingsError(error.response?.data?.error || 'Unable to save settings on the server.');
+      } finally {
+        setSettingsSaving(false);
+      }
+      setSettingsSaved(true);
+      return;
+    }
     const savedLog = {
       id: Date.now(),
       timestamp: new Date().toISOString(),
@@ -324,6 +435,55 @@ export default function Settings() {
     link.remove();
     URL.revokeObjectURL(blobUrl);
   };
+
+  // Server-backed loads: fall back to browser-only demo mode when the API can't answer
+  // (e.g. the static GitHub Pages build, which has no backend).
+  useEffect(() => {
+    let current = true;
+    const savedPolicy = readLocalObject(SETTINGS_KEY, {}).securityPolicy
+      || readLocalObject('pos_settings_security_policy', null);
+    settingsApi.getSecurityPolicy()
+      .then(({ data }) => {
+        if (!current) return;
+        setServerMode(true);
+        setSecurityPolicy(previous => ({ ...previous, ...data }));
+        return Promise.all([userApi.getAll(), userApi.getRoles()])
+          .then(([usersResult, rolesResult]) => {
+            if (!current) return;
+            if (usersResult.data?.length) setAccessUsers(usersResult.data);
+            if (rolesResult.data?.length) setRoles(rolesResult.data);
+          })
+          .catch(() => {});
+      })
+      .catch(() => {
+        if (!current) return;
+        setServerMode(false);
+        if (savedPolicy) setSecurityPolicy(previous => ({ ...previous, ...savedPolicy }));
+      });
+    return () => { current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!serverMode || !selectedMenuRestaurantId) return;
+    let current = true;
+    settingsApi.getMenuAssignment(selectedMenuRestaurantId)
+      .then(({ data }) => {
+        if (!current) return;
+        setMenuItems(data);
+        setAssignedItemIds(data.filter(item => item.assigned).map(item => Number(item.id)));
+      })
+      .catch(() => setServerMode(false));
+    return () => { current = false; };
+  }, [serverMode, selectedMenuRestaurantId, menuReloadKey]);
+
+  const refreshAuditLog = () => {
+    if (!serverMode) return;
+    settingsApi.getAuditLog()
+      .then(({ data }) => setAuditLogs(normalizeServerLogs(data)))
+      .catch(() => setServerMode(false));
+  };
+
+  useEffect(() => { if (serverMode) refreshAuditLog(); }, [serverMode]);
 
   const handleSaveRestaurant = async (e) => {
     e.preventDefault();
@@ -458,14 +618,25 @@ export default function Settings() {
             <span className="font-semibold text-slate-500">Active store</span>
             <span className="ml-2 font-bold text-slate-900">{activeRestaurant?.name || 'No outlet selected'}</span>
           </div>
-          <button type="button" onClick={saveSettings} className="btn btn-primary text-sm">Save settings</button>
+          <button type="button" onClick={saveSettings} disabled={settingsSaving} className="btn btn-primary text-sm disabled:opacity-60">{settingsSaving ? 'Saving…' : 'Save settings'}</button>
           <button type="button" onClick={exportSettings} className="btn btn-secondary text-sm">Export JSON</button>
         </div>
       </div>
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        Store and branch profiles are saved on the server. Menu assignment, role overrides, session policies, and audit examples remain browser-only prototype settings.
-        {settingsSaved && <span className="ml-2 font-bold text-emerald-700" role="status">Saved in this browser.</span>}
-      </div>
+      {serverMode === null ? (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">Checking the settings server…</div>
+      ) : serverMode ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          Security policy, menu assignment, user roles, and the audit log are saved on the server.
+          {settingsSaved && <span className="ml-2 font-bold text-emerald-700" role="status">Saved.</span>}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          No settings server detected — this is the browser demo mode, so settings are saved in this browser only.
+          {settingsSaved && <span className="ml-2 font-bold text-emerald-700" role="status">Saved in this browser.</span>}
+        </div>
+      )}
+      {settingsNotice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{settingsNotice}</div>}
+      {settingsError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{settingsError}</div>}
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
@@ -819,9 +990,17 @@ export default function Settings() {
           {restaurants.length === 0 ? (
             <div className="card text-sm text-slate-500">Add a restaurant before assigning menu items.</div>
           ) : menuItems.length === 0 ? (
-            <div className="card text-sm text-slate-500">No menu items are available. Add items in Menu & Items first.</div>
+            <div className="card text-sm text-slate-500">No menu items exist for this outlet yet. Add items in Menu &amp; Items first.</div>
           ) : (
             <div className="card overflow-x-auto">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-500">{serverMode ? 'Tick the items this outlet should sell, then save the assignment to the server.' : 'Demo mode: assignments are kept in this browser until a server is reachable.'}</p>
+                {serverMode && (
+                  <button type="button" onClick={saveMenuAssignment} disabled={settingsSaving} className="btn btn-primary text-sm disabled:opacity-60">
+                    {settingsSaving ? 'Saving…' : 'Save assignment'}
+                  </button>
+                )}
+              </div>
               <table className="table min-w-[620px]">
                 <thead>
                   <tr><th>Item</th><th>Category</th><th>Price</th><th className="text-center">Available at outlet</th></tr>
@@ -831,11 +1010,13 @@ export default function Settings() {
                     const assignedIds = Array.isArray(item.restaurant_ids)
                       ? item.restaurant_ids.map(String)
                       : [String(item.restaurant_id || 1)];
-                    const isAssigned = assignedIds.includes(String(selectedMenuRestaurantId || restaurants[0]?.id));
+                    const isAssigned = serverMode
+                      ? assignedItemIds.map(String).includes(String(item.id))
+                      : assignedIds.includes(String(selectedMenuRestaurantId || restaurants[0]?.id));
                     return (
                       <tr key={item.id}>
                         <td className="font-bold text-slate-800">{item.name}</td>
-                        <td>{item.category_name || item.category || '—'}</td>
+                        <td>{item.category_name || '—'}</td>
                         <td>{item.price}</td>
                         <td className="text-center">
                           <input
@@ -858,10 +1039,10 @@ export default function Settings() {
 
       {activeTab === 'security' && (
         <section className="space-y-5">
-          <div className="card border-l-4 border-amber-400">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-amber-700">Demo policy only</p>
+          <div className={`card border-l-4 ${serverMode ? 'border-emerald-500' : 'border-amber-400'}`}>
+            <p className={`text-xs font-extrabold uppercase tracking-wide ${serverMode ? 'text-emerald-700' : 'text-amber-700'}`}>{serverMode ? 'Server policy' : 'Demo policy only'}</p>
             <h2 className="mt-1 text-xl font-extrabold text-slate-900">Security & Audit</h2>
-            <p className="mt-2 text-sm text-slate-600">These example policies are saved locally for the prototype; they do not change authentication, session expiry, or MFA enforcement.</p>
+            <p className="mt-2 text-sm text-slate-600">{serverMode ? 'This policy is stored on the server and recorded in the audit log when saved.' : 'These example policies are saved in this browser only; they do not change authentication, session expiry, or MFA enforcement.'}</p>
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="text-sm font-bold text-slate-700">
                 Session timeout (minutes)
@@ -916,27 +1097,41 @@ export default function Settings() {
                 Require MFA for admins (example policy)
               </label>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setAuditLogs(logs => [{
-                  id: Date.now(),
-                  timestamp: new Date().toISOString(),
-                  username: user?.username || 'Admin',
-                  action: 'Reviewed demo security policy',
-                  details: 'Opened Security & Audit settings',
-                }, ...logs].slice(0, 200));
-              }}
-              className="btn btn-secondary mt-4 text-sm"
-            >
-              Record policy review
-            </button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {serverMode && (
+                <button
+                  type="button"
+                  onClick={saveSecurityPolicy}
+                  disabled={settingsSaving}
+                  className="btn btn-primary text-sm disabled:opacity-60"
+                >
+                  {settingsSaving ? 'Saving…' : 'Save policy on server'}
+                </button>
+              )}
+              {!serverMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuditLogs(logs => [{
+                      id: Date.now(),
+                      timestamp: new Date().toISOString(),
+                      username: user?.username || 'Admin',
+                      action: 'Reviewed demo security policy',
+                      details: 'Opened Security & Audit settings',
+                    }, ...logs].slice(0, 200));
+                  }}
+                  className="btn btn-secondary text-sm"
+                >
+                  Record policy review
+                </button>
+              )}
+            </div>
           </div>
           <div className="card">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-extrabold text-slate-900">Settings activity log</h3>
-                <p className="text-sm text-slate-500">Recent changes recorded by this prototype in this browser.</p>
+                <p className="text-sm text-slate-500">{serverMode ? 'Recorded by the server — the same log is visible from every browser.' : 'Recent changes recorded by this demo in this browser.'}</p>
               </div>
               <button
                 type="button"
@@ -944,7 +1139,8 @@ export default function Settings() {
                   setAuditLogs([]);
                   setSettingsSaved(false);
                 }}
-                disabled={!auditLogs.length}
+                disabled={!auditLogs.length || serverMode}
+                title={serverMode ? 'The audit log is server-recorded and cannot be cleared here' : undefined}
                 className="btn btn-secondary text-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Clear log
@@ -1057,7 +1253,7 @@ export default function Settings() {
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-primary-600 mb-1">Privilege Management</p>
                 <h2 className="text-2xl font-bold text-gray-800">User Access Permissions</h2>
-                <p className="text-gray-500 mt-1">Edit demo role assignment, outlet assignment, and action overrides stored in this browser.</p>
+                <p className="text-gray-500 mt-1">{serverMode ? 'Role and outlet assignment save to the server automatically; action overrides remain a local matrix.' : 'Demo mode: role assignment, outlet assignment, and action overrides are stored in this browser.'}</p>
               </div>
               <div className="w-full lg:w-80">
                 <label className="block text-sm font-bold text-gray-700 mb-1">Select user</label>
@@ -1108,6 +1304,7 @@ export default function Settings() {
                       <option value="">Select role</option>
                       {roles.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
                     </select>
+                    {serverMode && <p className="mt-1 text-xs font-semibold text-emerald-700">Role changes save on the server automatically.</p>}
                   </label>
                   <fieldset>
                     <legend className="mb-2 text-sm font-bold text-slate-700">Assigned restaurants</legend>
@@ -1143,7 +1340,7 @@ export default function Settings() {
                 <div className="p-5 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <h3 className="text-lg font-bold text-gray-800">Permission options</h3>
-                    <p className="text-sm text-gray-500">Select prototype actions for this user. These overrides are not enforced by the server.</p>
+                    <p className="text-sm text-gray-500">Action overrides are a browser-side matrix; the server enforces the assigned role's permissions.</p>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -1204,9 +1401,9 @@ export default function Settings() {
                 </div>
                 <div className="p-5 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <p className={`text-sm font-semibold ${accessSaved ? 'text-green-700' : 'text-gray-500'}`}>
-                    {accessSaved ? 'Permissions saved successfully.' : 'Unsaved permission changes'}
+                    {accessSaved ? (serverMode ? 'Permissions saved on the server.' : 'Permissions saved in this browser.') : 'Unsaved permission changes'}
                   </p>
-                  <button type="button" onClick={saveUserPermissions} className="btn btn-primary">Save demo permissions</button>
+                  <button type="button" onClick={saveUserPermissions} className="btn btn-primary">{serverMode ? 'Save permissions' : 'Save demo permissions'}</button>
                 </div>
               </div>
             </>

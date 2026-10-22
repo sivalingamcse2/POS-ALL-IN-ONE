@@ -2,6 +2,21 @@ const db = require('../config/db');
 
 const Activity = {
   async findAll(filters = {}) {
+    // Local JSON mode: the SQL emulator cannot join users, so hydrate
+    // usernames and apply filters in memory.
+    if (!db.isPgConnected()) {
+      const state = db.getLocalDb();
+      let rows = (state.activities || []).map(activity => ({
+        ...activity,
+        username: (state.users || []).find(user => Number(user.id) === Number(activity.user_id))?.username || 'Unknown',
+      }));
+      if (filters.user_id) rows = rows.filter(row => Number(row.user_id) === Number(filters.user_id));
+      if (filters.start_date) rows = rows.filter(row => new Date(row.created_at) >= new Date(filters.start_date));
+      if (filters.end_date) rows = rows.filter(row => new Date(row.created_at) <= new Date(filters.end_date));
+      rows.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      return rows.slice(0, 500);
+    }
+
     let query = `
       SELECT a.*, u.username 
       FROM activities a

@@ -128,6 +128,15 @@ export const storageApi = {
   getOrders: () => api.get('/storage/orders'),
 };
 
+// System Settings API (server-persisted policies, menu assignment, audit log)
+export const settingsApi = {
+  getSecurityPolicy: () => api.get('/settings/security-policy'),
+  saveSecurityPolicy: (data) => api.put('/settings/security-policy', data),
+  getMenuAssignment: (restaurantId) => api.get(`/settings/menu-assignment/${restaurantId}`),
+  saveMenuAssignment: (restaurantId, itemIds) => api.put(`/settings/menu-assignment/${restaurantId}`, { item_ids: itemIds }),
+  getAuditLog: () => api.get('/settings/audit-log'),
+};
+
 // Reports API
 export const reportApi = {
   getDashboard: () => api.get('/reports/dashboard'),
