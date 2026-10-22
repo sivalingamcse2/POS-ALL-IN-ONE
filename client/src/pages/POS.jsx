@@ -280,7 +280,7 @@ export default function POS() {
 
   const subtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const taxRate = activeRestaurant?.tax_rate || 0;
-  const discountAmount = discountPercentage > 0 ? subtotal * (discountPercentage / 100) : discount;
+  const discountAmount = Math.min(subtotal, Math.max(0, discountPercentage > 0 ? subtotal * (discountPercentage / 100) : discount));
   const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
   const total = subtotal + taxAmount - discountAmount;
   const changeDue = Math.max(0, (parseFloat(amountTendered) || 0) - total);
@@ -649,7 +649,7 @@ export default function POS() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-140px)] min-h-[560px] flex-col gap-3 font-sans">
+    <div className="flex min-h-[calc(100vh-140px)] flex-col gap-3 font-sans">
       {/* Top Banner: Restaurant Mode Bar */}
       <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-white shadow-md">
         <div className="flex items-center gap-2">
@@ -678,9 +678,9 @@ export default function POS() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
+      <div className="grid flex-1 grid-cols-1 gap-3 lg:min-h-0 lg:overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
         {/* Left Panel - Tables & Menu */}
-        <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
+        <div className="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-hidden">
         {/* Incoming Guest Orders Shelf */}
         {apiOrders.length > 0 && (
           <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 shadow-sm">
@@ -748,7 +748,7 @@ export default function POS() {
         </div>
 
         {/* Categories & Items */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:min-h-0 lg:flex-1 lg:overflow-hidden">
           {/* Search Bar & Voice */}
           <div className="mb-3 flex gap-2">
             <input
@@ -793,8 +793,8 @@ export default function POS() {
             ))}
           </div>
           
-          <div className="grid min-h-0 grid-cols-2 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-3 2xl:grid-cols-4">
-            {displayItems?.filter(i => i.is_active).map((item) => (
+          <div className="grid min-h-[180px] grid-cols-2 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-3 2xl:grid-cols-4 lg:min-h-0">
+            {displayItems?.map((item) => (
               <button
                 key={item.id}
                 onClick={() => handleAddItem(item)}
@@ -808,12 +808,12 @@ export default function POS() {
                 
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${
-                  (item.stock_quantity || 0) <= 5 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'
+                  item.stock_quantity == null ? 'bg-slate-100 text-slate-500' : item.stock_quantity <= 5 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'
                   }`}>
-                  Stock {item.stock_quantity ?? 'N/A'}
+                  {item.stock_quantity == null ? 'Stock N/A' : `Stock ${item.stock_quantity}`}
                   </span>
                   
-                  {(item.stock_quantity || 0) <= 0 && (
+                  {item.stock_quantity != null && item.stock_quantity <= 0 && (
                     <span className="text-[10px] font-bold text-red-600 uppercase">Out of Stock</span>
                   )}
                 </div>
@@ -824,7 +824,7 @@ export default function POS() {
       </div>
 
       {/* Right Panel - Order */}
-      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:min-h-0 lg:overflow-y-auto">
         <h2 className="mb-3 text-base font-extrabold text-slate-900">
           {selectedTable ? `Order - ${selectedTable.table_name}` : 'Select a Table'}
         </h2>
@@ -967,7 +967,7 @@ export default function POS() {
         </div>
 
         {/* Order Items */}
-        <div className="mb-3 min-h-0 flex-1 overflow-y-auto">
+        <div className="mb-3 max-h-[45vh] overflow-y-auto">
           {orderItems.length === 0 ? (
             <p className="rounded-xl border border-dashed border-slate-200 py-8 text-center text-xs font-medium text-slate-400">No items added</p>
           ) : (
@@ -1006,16 +1006,29 @@ export default function POS() {
         </div>
 
         {/* Discount */}
-        <div className="mb-3">
+        <div className="mb-3 grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-[11px] font-bold text-slate-600">Discount percentage (%)</label>
+            <label className="mb-1 block text-[11px] font-bold text-slate-600">Discount %</label>
             <input
               type="number"
               value={discountPercentage}
-              onChange={(e) => setDiscountPercentage(parseFloat(e.target.value) || 0)}
+              onChange={(e) => { setDiscountPercentage(parseFloat(e.target.value) || 0); if ((parseFloat(e.target.value) || 0) > 0) setDiscount(0); }}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-50"
               min="0"
               max="100"
+              placeholder="0"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-bold text-slate-600">Manual discount ({activeRestaurant?.currency || 'USD'})</label>
+            <input
+              type="number"
+              value={discount}
+              onChange={(e) => { setDiscountPercentage(0); setDiscount(parseFloat(e.target.value) || 0); }}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-50"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
             />
           </div>
         </div>
