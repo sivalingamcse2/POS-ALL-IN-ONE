@@ -21,7 +21,7 @@ const DEFAULT_LOCAL_STATE = {
     { id: 1, name: 'Admin', permissions: { POS: true, Inventory: true, Reports: true, UserMgmt: true, Settings: true } }
   ],
   users: [
-    { id: 1, username: 'admin', password: '$2a$10$YourHashedPasswordHere', role_id: 1, is_active: true }
+    { id: 1, username: 'admin', password: '$2b$10$xWkCCJpL.UU9ToBGq1i4cOB9UANaAe4Jfvl3LeRX6w7axBEt.p1wW', role_id: 1, is_active: true }
   ],
   user_restaurant_access: [
     { id: 1, user_id: 1, restaurant_id: 1, is_default: true }
@@ -109,7 +109,7 @@ try {
     .catch((err) => {
       isPgConnected = false;
       console.log('ℹ️ PostgreSQL not reachable (' + err.message + ').');
-      console.log('⚡ Active Storage Engine: LOCAL PERSISTENT STORAGE (server/data/local_db.json)');
+      console.log('⚡ Active Storage Engine: LOCAL PERSISTENT STORAGE (' + LOCAL_DB_FILE + ')');
     });
 } catch (e) {
   isPgConnected = false;
