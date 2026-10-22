@@ -136,6 +136,39 @@ export default function Settings() {
   const [assignedItemIds, setAssignedItemIds] = useState([]);
   const [menuReloadKey, setMenuReloadKey] = useState(0);
   const [probeKey, setProbeKey] = useState(0);
+  // Hardware: receipt/kitchen printers and customer/KDS displays (saved on this device)
+  const [hardware, setHardware] = useState(() => ({
+    receiptPrinter: {
+      enabled: true,
+      connection: 'network',
+      name: 'POS-80 Receipt Printer (ESC/POS)',
+      ipAddress: '192.168.1.100',
+      port: 9100,
+      paperWidth: '80',
+      copies: 1,
+      autoCut: true,
+      openDrawer: true,
+    },
+    kitchenPrinter: {
+      enabled: false,
+      connection: 'network',
+      name: 'Kitchen Ticket Printer',
+      ipAddress: '192.168.1.101',
+      port: 9100,
+      paperWidth: '80',
+      copies: 1,
+      ticketMode: 'order',
+    },
+    display: {
+      customerDisplay: 'none',
+      showTotals: true,
+      kdsEnabled: false,
+      kdsLayout: 'station',
+    },
+    ...readLocalObject('pos_settings_hardware', {}),
+  }));
+  const [hardwareSaved, setHardwareSaved] = useState(false);
+  const [hardwareNotice, setHardwareNotice] = useState('');
 
   const selectedAccessUser = accessUsers.find(accessUser => String(accessUser.id) === String(selectedAccessUserId));
   const selectedAccessRole = roles
@@ -366,6 +399,82 @@ export default function Settings() {
     }
   };
 
+  const updateHardware = (section, field, value) => {
+    setHardware(previous => ({ ...previous, [section]: { ...previous[section], [field]: value } }));
+    setHardwareSaved(false);
+    setHardwareNotice('');
+  };
+
+  const saveHardware = () => {
+    localStorage.setItem('pos_settings_hardware', JSON.stringify(hardware));
+    setHardwareSaved(true);
+    setHardwareNotice('Hardware configuration saved on this device.');
+    setAuditLogs(logs => [{
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      username: user?.username || 'Admin',
+      action: 'Updated hardware settings',
+      details: `Receipt printer: ${hardware.receiptPrinter.connection}, Kitchen printer: ${hardware.kitchenPrinter.enabled ? hardware.kitchenPrinter.connection : 'off'}, Display: ${hardware.display.customerDisplay}${hardware.display.kdsEnabled ? ' + KDS' : ''}`,
+    }, ...logs].slice(0, 200));
+  };
+
+  const detectPorts = async () => {
+    // Modern browser hardware APIs: WebSerial lists ports; WebBluetooth pairs BLE printers.
+    if (navigator.serial) {
+      try {
+        const port = await navigator.serial.requestPort();
+        const info = port.getInfo() || {};
+        setHardwareNotice(`Serial device found — USB vendor 0x${(info.usbVendorId || 0).toString(16)}, product 0x${(info.usbProductId || 0).toString(16)}. Select "USB" as the connection type to use it.`);
+        return;
+      } catch {
+        setHardwareNotice('No serial device was selected.');
+        return;
+      }
+    }
+    if (navigator.bluetooth) {
+      try {
+        const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
+        setHardwareNotice(`Bluetooth device found — ${device.name || 'Unnamed'}. Select "Bluetooth" as the connection type to use it.`);
+        return;
+      } catch {
+        setHardwareNotice('No Bluetooth device was selected.');
+        return;
+      }
+    }
+    setHardwareNotice('This browser does not expose USB/Bluetooth printer APIs. Use Network/IP or Cloud printing instead.');
+  };
+
+  const testPrint = () => {
+    const printer = hardware.receiptPrinter;
+    const win = window.open('', '_blank', 'width=380,height=640');
+    if (!win) {
+      setHardwareNotice('Pop-up blocked — allow pop-ups to run the test print.');
+      return;
+    }
+    const width = printer.paperWidth === '58' ? '2in' : '3in';
+    win.document.write(`<!DOCTYPE html><html><head><title>Test Print</title><style>
+      @page { size: ${width} auto; margin: 4mm; }
+      body { font-family: 'Courier New', monospace; width: ${width}; margin: 0; font-size: 12px; }
+      h2, p { margin: 2px 0; text-align: center; }
+      hr { border: none; border-top: 1px dashed #000; margin: 6px 0; }
+    </style></head><body>
+      <h2>TEST PRINT</h2>
+      <p>ALL IN ONE POS</p>
+      <p>SIVARA GROUP</p>
+      <hr/>
+      <p style="text-align:left">Printer: ${printer.name}</p>
+      <p style="text-align:left">Mode: ${printer.connection}${printer.connection === 'network' ? ` @ ${printer.ipAddress}:${printer.port}` : ''}</p>
+      <p style="text-align:left">Paper: ${printer.paperWidth}mm | Copies: ${printer.copies} | Auto-cut: ${printer.autoCut ? 'On' : 'Off'}</p>
+      <hr/>
+      <p>${new Date().toLocaleString()}</p>
+      <p>1234567890</p>
+      <hr/>
+      <p>*** END OF TEST ***</p>
+      <script>window.onload = () => setTimeout(() => { window.print(); }, 250);</script>
+    </body></html>`);
+    win.document.close();
+  };
+
   const getSettingsSnapshot = () => ({
     version: 1,
     exportedAt: new Date().toISOString(),
@@ -382,6 +491,7 @@ export default function Settings() {
         ? item.restaurant_ids
         : [item.restaurant_id || 1],
     })),
+    hardware,
     securityPolicy,
     auditLogs,
   });
@@ -656,6 +766,7 @@ export default function Settings() {
           { id: 'restaurant', label: 'Branches' },
           { id: 'tables', label: 'Tables' },
           { id: 'menu', label: 'Menu Assignment' },
+          { id: 'hardware', label: 'Printers & Displays' },
           { id: 'security', label: 'Security & Audit' },
         ].map((tab) => (
           <button
@@ -1156,6 +1267,181 @@ export default function Settings() {
           </div>
         </section>
       )}
+
+      {/* Printers & Displays (Hardware) */}
+      {activeTab === 'hardware' && (() => {
+        const field = (section, key, label, type, options) => {
+          if (type === 'checkbox') {
+            return (
+              <label className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean(hardware[section][key])}
+                  onChange={(event) => updateHardware(section, key, event.target.checked)}
+                  className="h-5 w-5 accent-emerald-600"
+                />
+                {label}
+              </label>
+            );
+          }
+          if (type === 'select') {
+            return (
+              <label className="text-sm font-bold text-slate-700">
+                {label}
+                <select
+                  value={hardware[section][key]}
+                  onChange={(event) => {
+                    const { value } = event.target;
+                    updateHardware(section, key, type === 'number' ? Number(value) : value);
+                  }}
+                  className="input mt-1"
+                >
+                  {options.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            );
+          }
+          return (
+            <label className="text-sm font-bold text-slate-700">
+              {label}
+              <input
+                type={type === 'number' ? 'number' : 'text'}
+                value={hardware[section][key]}
+                min={type === 'number' ? 0 : undefined}
+                onChange={(event) => {
+                  const { value } = event.target;
+                  updateHardware(section, key, type === 'number' ? Number(value) || 0 : value);
+                }}
+                className="input mt-1"
+              />
+            </label>
+          );
+        };
+        const connectionOptions = [
+          { value: 'network', label: 'Network / LAN (IP)' },
+          { value: 'usb', label: 'USB (WebSerial)' },
+          { value: 'bluetooth', label: 'Bluetooth' },
+          { value: 'cloud', label: 'Cloud Print' },
+          { value: 'email', label: 'Email PDF' },
+        ];
+        return (
+        <section className="space-y-5">
+          {hardwareNotice && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">
+              {hardwareNotice}
+            </div>
+          )}
+
+          {/* Receipt printer */}
+          <div className="card !border-l-4 !border-l-emerald-500">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">🖨️ Receipt Printer</h2>
+                <p className="text-sm text-slate-500">Prints customer bills at the counter.</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={hardware.receiptPrinter.enabled}
+                  onChange={(event) => updateHardware('receiptPrinter', 'enabled', event.target.checked)}
+                  className="h-5 w-5 accent-emerald-600"
+                />
+                Enabled
+              </label>
+            </div>
+            {hardware.receiptPrinter.enabled && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {field('receiptPrinter', 'connection', 'Connection type', 'select', connectionOptions)}
+              {field('receiptPrinter', 'name', 'Printer name / driver', 'text')}
+              {hardware.receiptPrinter.connection === 'network' && field('receiptPrinter', 'ipAddress', 'Printer IP address', 'text')}
+              {hardware.receiptPrinter.connection === 'network' && field('receiptPrinter', 'port', 'Port', 'number')}
+              {field('receiptPrinter', 'paperWidth', 'Paper width', 'select', [
+                { value: '80', label: '80mm' },
+                { value: '58', label: '58mm' },
+              ])}
+              {field('receiptPrinter', 'copies', 'Copies per bill', 'number')}
+              {field('receiptPrinter', 'autoCut', 'Auto-cut paper', 'checkbox')}
+              {field('receiptPrinter', 'openDrawer', 'Open cash drawer on payment', 'checkbox')}
+            </div>
+            )}
+          </div>
+
+          {/* Kitchen printer */}
+          <div className="card !border-l-4 !border-l-orange-400">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">🍳 Kitchen Printer / Ticket Printer</h2>
+                <p className="text-sm text-slate-500">Prints orders to the kitchen as they are placed.</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={hardware.kitchenPrinter.enabled}
+                  onChange={(event) => updateHardware('kitchenPrinter', 'enabled', event.target.checked)}
+                  className="h-5 w-5 accent-emerald-600"
+                />
+                Enabled
+              </label>
+            </div>
+            {hardware.kitchenPrinter.enabled && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {field('kitchenPrinter', 'connection', 'Connection type', 'select', connectionOptions)}
+              {field('kitchenPrinter', 'name', 'Printer name / driver', 'text')}
+              {hardware.kitchenPrinter.connection === 'network' && field('kitchenPrinter', 'ipAddress', 'Printer IP address', 'text')}
+              {hardware.kitchenPrinter.connection === 'network' && field('kitchenPrinter', 'port', 'Port', 'number')}
+              {field('kitchenPrinter', 'paperWidth', 'Paper width', 'select', [
+                { value: '80', label: '80mm' },
+                { value: '58', label: '58mm' },
+              ])}
+              {field('kitchenPrinter', 'copies', 'Copies per ticket', 'number')}
+              {field('kitchenPrinter', 'ticketMode', 'Ticket printing mode', 'select', [
+                { value: 'order', label: 'One ticket per order' },
+                { value: 'item', label: 'One ticket per item' },
+              ])}
+            </div>
+            )}
+          </div>
+
+          {/* Monitors & displays */}
+          <div className="card !border-l-4 !border-l-blue-500">
+            <h2 className="mb-1 text-xl font-bold text-gray-800">🖥️ Monitors &amp; Displays</h2>
+            <p className="mb-4 text-sm text-slate-500">Customer-facing screens and the Kitchen Display System.</p>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {field('display', 'customerDisplay', 'Customer display', 'select', [
+                { value: 'none', label: 'None' },
+                { value: 'pole', label: '2-line pole display (20×2)' },
+                { value: 'screen', label: 'Customer touchscreen / monitor' },
+              ])}
+              {field('display', 'showTotals', 'Show running totals on customer display', 'checkbox')}
+              {field('display', 'kdsEnabled', 'Kitchen Display System (KDS screens)', 'checkbox')}
+              {hardware.display.kdsEnabled && field('display', 'kdsLayout', 'KDS layout', 'select', [
+                { value: 'station', label: 'By kitchen station' },
+                { value: 'category', label: 'By menu category' },
+                { value: 'all', label: 'All orders on one screen' },
+              ])}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="card">
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={saveHardware} className="btn btn-primary text-sm">
+                {hardwareSaved ? '✓ Saved' : 'Save hardware settings'}
+              </button>
+              <button type="button" onClick={testPrint} className="btn btn-secondary text-sm">
+                Test print
+              </button>
+              <button type="button" onClick={detectPorts} className="btn btn-secondary text-sm">
+                Detect USB / Bluetooth printer
+              </button>
+              <p className="text-xs text-slate-400">Settings are saved on this device and included in the settings export backup.</p>
+            </div>
+          </div>
+        </section>
+        );
+      })()}
 
       {/* Tables Management */}
       {activeTab === 'tables' && (
