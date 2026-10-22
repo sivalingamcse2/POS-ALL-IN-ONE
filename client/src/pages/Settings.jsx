@@ -960,12 +960,7 @@ export default function Settings() {
       {activeTab === 'menu' && (
         <section className="space-y-5">
           <div className="card">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-wide text-emerald-700">Outlet menu visibility</p>
-                <h2 className="mt-1 text-xl font-extrabold text-slate-900">Menu Assignment</h2>
-                <p className="mt-1 text-sm text-slate-500">Choose which existing menu items are assigned to an outlet.</p>
-              </div>
+            <div className="flex flex-wrap items-end justify-end gap-4">
               <label className="w-full max-w-sm text-sm font-bold text-slate-700">
                 Restaurant
                 <select
@@ -1036,10 +1031,7 @@ export default function Settings() {
       {activeTab === 'security' && (
         <section className="space-y-5">
           <div className={`card !border-l-4 ${serverMode ? '!border-l-emerald-500' : '!border-l-amber-400'}`}>
-            <p className={`text-xs font-extrabold uppercase tracking-wide ${serverMode ? 'text-emerald-700' : 'text-amber-700'}`}>{serverMode ? 'Server policy' : 'Demo policy only'}</p>
-            <h2 className="mt-1 text-xl font-extrabold text-slate-900">Security & Audit</h2>
-            <p className="mt-2 text-sm text-slate-600">{serverMode ? 'This policy is stored on the server and recorded in the audit log when saved.' : 'These example policies are saved in this browser only; they do not change authentication, session expiry, or MFA enforcement.'}</p>
-            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="text-sm font-bold text-slate-700">
                 Session timeout (minutes)
                 <input
