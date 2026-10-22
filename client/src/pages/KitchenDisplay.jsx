@@ -279,10 +279,8 @@ export default function KitchenDisplay() {
     printWindow.print();
   };
 
-  const isChromeless = new URLSearchParams(window.location.search).get('chromeless') === '1';
-
   return (
-    <div className={`flex ${isChromeless ? 'h-screen' : 'h-[calc(100vh-40px)]'} min-h-[560px] flex-col overflow-hidden bg-slate-100 text-slate-900 ${isChromeless ? '' : 'rounded-2xl'}`}>
+    <div className="flex h-[calc(100vh-40px)] min-h-[560px] flex-col overflow-hidden rounded-2xl bg-slate-100 text-slate-900">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 bg-slate-900 px-5 py-4 text-white shadow-sm">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500 text-xs font-black text-slate-950">KDS</div>

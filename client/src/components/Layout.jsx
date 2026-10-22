@@ -27,12 +27,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  // POS terminals open as a right-side slide-over panel; the left module sidebar stays visible.
-  const [drawerPath, setDrawerPath] = useState(null);
-  const [drawerMounted, setDrawerMounted] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const isChromeless = new URLSearchParams(location.search).get('chromeless') === '1';
   const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirmation: '' });
   const [passwordError, setPasswordError] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
@@ -47,51 +42,6 @@ export default function Layout() {
     });
     return unsub;
   }, []);
-
-  const drawerConfigs = {
-    '/mobile-pos': { title: 'MOBILE POS', width: 'w-full max-w-[440px]' },
-    '/pos': { title: 'RESTAURANT POS', width: 'w-[calc(100vw-300px)] max-w-[1240px]' },
-    '/kds': { title: 'KITCHEN (KDS)', width: 'w-[calc(100vw-300px)] max-w-[1100px]' },
-  };
-
-  const openDrawer = path => {
-    setDrawerPath(path);
-    setDrawerMounted(true);
-    // Double rAF: the panel must paint off-screen first, then slide to translate-x-0.
-    requestAnimationFrame(() => requestAnimationFrame(() => setDrawerOpen(true)));
-  };
-
-  const closeDrawer = () => setDrawerOpen(false);
-
-  useEffect(() => {
-    const onKey = event => { if (event.key === 'Escape') setDrawerOpen(false); };
-    const onMessage = event => { if (event.data === 'sivara:close-drawer') setDrawerOpen(false); };
-    const onOpenRequest = event => { if (drawerConfigs[event.detail]) openDrawer(event.detail); };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('message', onMessage);
-    window.addEventListener('sivara-open-drawer', onOpenRequest);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('message', onMessage);
-      window.removeEventListener('sivara-open-drawer', onOpenRequest);
-    };
-  }, []);
-
-  // Navigating to another module closes the panel so the page underneath is clear.
-  useEffect(() => {
-    setDrawerOpen(false);
-  }, [location.pathname]);
-
-  // Inside the panel iframe (chromeless), forward Escape to the parent so it can close.
-  useEffect(() => {
-    if (!isChromeless) return;
-    const forwardKey = event => { if (event.key === 'Escape') window.parent.postMessage('sivara:close-drawer', '*'); };
-    window.addEventListener('keydown', forwardKey);
-    return () => window.removeEventListener('keydown', forwardKey);
-  }, [isChromeless]);
-
-  const routerBase = import.meta.env.VITE_ROUTER_BASE || '/';
-  const drawerSrc = `${routerBase === '/' ? '' : routerBase}${drawerPath || ''}?chromeless=1`;
 
   const handleLogout = async () => {
     await logout();
@@ -136,15 +86,6 @@ export default function Layout() {
   const isSupermarketActive = location.pathname === '/supermarket-pos';
   const isRestaurantActive = location.pathname === '/pos';
 
-  // Chromeless mode: rendered inside the POS panel iframe (no sidebar/header).
-  if (isChromeless) {
-    return (
-      <main className="app-main h-screen flex-1 overflow-auto bg-slate-100">
-        <Outlet />
-      </main>
-    );
-  }
-
   return (
     <div className="app-shell flex h-screen bg-slate-100">
       {/* Sidebar */}
@@ -167,23 +108,7 @@ export default function Layout() {
         </div>
         
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {filteredMenuItems.map(item => drawerConfigs[item.path] ? (
-            <button
-              key={item.path}
-              type="button"
-              onClick={() => openDrawer(item.path)}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all ${
-                drawerOpen && drawerPath === item.path
-                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-950/30'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
-              </svg>
-              {sidebarOpen && <span>{item.label}</span>}
-            </button>
-          ) : (
+          {filteredMenuItems.map(item => (
             <NavLink
               key={item.path}
               to={item.path}
@@ -246,7 +171,7 @@ export default function Layout() {
                 <span>🛒</span> Supermarket Mode
               </button>
               <button
-                onClick={() => openDrawer('/pos')}
+                onClick={() => navigate('/pos')}
                 className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
                   isRestaurantActive
                     ? 'bg-emerald-600 text-white shadow-sm'
@@ -348,36 +273,6 @@ export default function Layout() {
               <button type="submit" disabled={passwordSaving} className="btn btn-primary">{passwordSaving ? 'Updating…' : 'Change password'}</button>
             </div>
           </form>
-        </div>
-      )}
-
-      {/* POS terminal right-side slide-over panel (non-modal: left sidebar stays usable) */}
-      {drawerMounted && drawerPath && (
-        <div
-          className={`fixed inset-y-0 right-0 z-40 ${drawerOpen ? '' : 'pointer-events-none'}`}
-          role="complementary"
-          aria-label={drawerConfigs[drawerPath].title}
-          aria-hidden={!drawerOpen}
-          inert={!drawerOpen}
-        >
-          <div className={`flex h-full flex-col bg-slate-100 shadow-[-16px_0_40px_rgba(15,23,42,0.18)] ring-1 ring-slate-200 transition-transform duration-300 ease-out ${drawerConfigs[drawerPath].width} ${drawerOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-            <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-2.5 text-white">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-sm font-black">S</div>
-                <div>
-                  <p className="text-xs font-extrabold leading-tight tracking-wide">{drawerConfigs[drawerPath].title}</p>
-                  <p className="text-[9px] font-semibold text-emerald-300">Slide-over terminal</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeDrawer}
-                aria-label={`Close ${drawerConfigs[drawerPath].title}`}
-                className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-bold text-slate-200 transition hover:bg-slate-700 hover:text-white"
-              >✕ Close</button>
-            </div>
-            <iframe key={drawerPath} title={`${drawerConfigs[drawerPath].title} Terminal`} src={drawerSrc} className="min-h-0 w-full flex-1 border-0 bg-slate-100" />
-          </div>
         </div>
       )}
     </div>
