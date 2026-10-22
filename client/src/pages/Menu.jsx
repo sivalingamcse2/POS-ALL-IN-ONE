@@ -218,14 +218,7 @@ export default function Menu() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="mb-1 text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-700">Administration</p>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Menu Management</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Managing items for <span className="font-semibold text-gray-700">{activeRestaurant?.name || 'your restaurant'}</span>.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-4">
         <div className="flex flex-wrap items-center gap-3">
           {(activeTab === 'items' || activeTab === 'categories') && (
             <button
