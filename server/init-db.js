@@ -10,7 +10,7 @@ async function initDatabase() {
     const sql = fs.readFileSync(sqlFile, 'utf8');
     
     await pool.query(sql);
-    
+    git commit -m "Add index.html and static file routing"
     console.log('Database initialized successfully!');
     process.exit(0);
   } catch (error) {

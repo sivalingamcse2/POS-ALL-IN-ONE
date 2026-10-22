@@ -178,3 +178,96 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 module.exports = app;
+const path = require('path');
+
+// 1. Serve static files from the 'public' folder
+app.use(express.static(path.join(__dirname, 'public')));
+
+// 2. Explicit route for the login page
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// 3. Fallback for root and other non-API routes
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
+});
+const express = require('express');
+const path = require('path');
+const cors = require('cors');
+const { Pool } = require('pg');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 5001;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// PostgreSQL Connection (reads DATABASE_URL from Render/Railway or local .env)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
+
+// Test Database Connection
+pool.connect()
+  .then(() => console.log('Connected to PostgreSQL Database'))
+  .catch(err => console.error('Database connection error:', err.stack));
+
+// --- API ROUTES ---
+app.post('/api/auth/login', async (req, res) => {
+  const { identifier, password } = req.body;
+  try {
+    // Example query (adjust based on your users table structure)
+    const result = await pool.query(
+      'SELECT * FROM users WHERE email = $1 OR username = $1', 
+      [identifier]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    const user = result.rows[0];
+    
+    // Note: In production, use bcrypt to compare passwords. 
+    // This is a placeholder check matching your setup:
+    if (user.password !== password) {
+      return res.status(401).json({ message: 'Incorrect password' });
+    }
+
+    res.json({ 
+      token: 'sample-secure-jwt-token', 
+      user: { id: user.id, username: user.username, role: user.role } 
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error during login' });
+  }
+});
+
+// --- FRONTEND STATIC & ROUTING ---
+
+// 1. Serve static assets from public folder
+app.use(express.static(path.join(__dirname, 'public')));
+
+// 2. Explicit route for Login Page
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// 3. Catch-all fallback to prevent 404s on page refresh
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
+});
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`SIVARA POS Server running on port ${PORT}`);
+});
