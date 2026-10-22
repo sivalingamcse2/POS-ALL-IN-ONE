@@ -1,0 +1,34 @@
+# Render.com blueprint for the SIVARA POS backend.
+# Click "New +" -> "Blueprint" in https://dashboard.render.com and point at this repo,
+# OR visit: https://render.com/deploy?repo=sivalingamcse2/POS-ALL-IN-ONE
+#
+# After the service is created, copy its External URL (e.g.
+# https://pos-api-abc123.onrender.com) into your GitHub repo as an Actions
+# variable named VITE_API_URL (Settings -> Secrets and variables -> Actions ->
+# Variables -> New repository variable). Then re-run the "Deploy POS UI to
+# GitHub Pages" workflow so the static bundle is rebuilt pointing at Render.
+services:
+  - type: web
+    name: pos-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci --omit=dev
+    startCommand: node index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      # Render auto-injects PORT; do not set it manually.
+      # JWT_SECRET is generated fresh on first deploy. Rotate it from the
+      # Render dashboard any time; existing tokens will invalidate.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 24h
+      # No PostgreSQL: the app falls back to the local JSON storage engine
+      # at server/../local_db.json (ephemeral on Render's free tier).
+      - key: DB_HOST
+        value: ""

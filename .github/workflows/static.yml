@@ -36,6 +36,7 @@ jobs:
         working-directory: client
         env:
           VITE_ROUTER_BASE: /${{ github.event.repository.name }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
         run: npm run build
       - name: SPA fallback (404.html -> index.html)
         working-directory: client

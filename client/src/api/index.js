@@ -1,7 +1,14 @@
 import axios from 'axios';
 
+// VITE_API_URL should be the FULL origin of the backend (e.g. https://pos-api-xxx.onrender.com).
+// Falls back to same-origin /api for local dev (via Vite proxy) or when the client and
+// API are hosted together.
+const apiBase = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, '')}/api`
+  : '/api';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: apiBase,
   headers: {
     'Content-Type': 'application/json',
   },
