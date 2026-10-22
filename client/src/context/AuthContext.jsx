@@ -3,6 +3,24 @@ import { authApi } from '../api';
 
 const AuthContext = createContext(null);
 
+// Offline/demo session used when no API server is reachable (e.g. the static
+// GitHub Pages deployment). The rest of the app already runs on localStorage
+// data, so an admin session works fully client-side in that mode.
+const DEMO_TOKEN = 'demo-mode';
+const DEMO_USER = {
+  id: 1,
+  username: 'admin',
+  role: 'Admin',
+  role_name: 'Admin',
+  permissions: { POS: true, Inventory: true, Reports: true, UserMgmt: true, Settings: true },
+  restaurants: [{ id: 1, name: 'SIVARA Main Branch', address: '123 Commercial Plaza', currency: 'USD', tax_rate: 10 }],
+  restaurant_id: 1,
+};
+
+const safeJsonParse = (raw, fallback) => {
+  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [activeRestaurant, setActiveRestaurant] = useState(() => {
@@ -79,6 +97,21 @@ export function AuthProvider({ children }) {
         return;
       }
 
+      // Demo sessions never call the server; restore them from local storage.
+      if (token === DEMO_TOKEN) {
+        const savedUser = safeJsonParse(localStorage.getItem('user'), null);
+        if (savedUser && savedUser.username) {
+          setUser(savedUser);
+          const savedRestaurant = safeJsonParse(localStorage.getItem('active_restaurant'), null);
+          setActiveRestaurant(savedRestaurant || savedUser.restaurants?.[0] || null);
+        } else {
+          localStorage.removeItem('token');
+          setUser(null);
+        }
+        setLoading(false);
+        return;
+      }
+
       try {
         localStorage.removeItem('active_restaurant');
         const { data: serverUser } = await authApi.me();
@@ -132,6 +165,19 @@ export function AuthProvider({ children }) {
       }
       return userData;
     } catch (error) {
+      // Static hosting (GitHub Pages) rejects POSTs with 405 and has no /api at
+      // all (404 / network failure). In that situation, allow the advertised
+      // demo credentials to start a local-only session so the UI stays usable.
+      const status = error.response?.status;
+      const serverUnreachable = !error.response || status === 404 || status === 405;
+      if (serverUnreachable && username === 'admin' && password === 'admin123') {
+        localStorage.setItem('token', DEMO_TOKEN);
+        localStorage.setItem('user', JSON.stringify(DEMO_USER));
+        localStorage.setItem('active_restaurant', JSON.stringify(DEMO_USER.restaurants[0]));
+        setUser(DEMO_USER);
+        setActiveRestaurant(DEMO_USER.restaurants[0]);
+        return DEMO_USER;
+      }
       throw new Error(error.response?.data?.error || error.message || 'Login failed');
     }
   };
