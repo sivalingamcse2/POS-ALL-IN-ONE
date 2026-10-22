@@ -649,14 +649,17 @@ export default function POS() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-140px)] min-h-[560px] flex-col gap-3">
+    <div className="flex h-[calc(100vh-140px)] min-h-[560px] flex-col gap-3 font-sans">
       {/* Top Banner: Restaurant Mode Bar */}
       <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-white shadow-md">
         <div className="flex items-center gap-2">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-xl">🍽️</span>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 font-black shadow-sm">S</div>
           <div>
-            <h2 className="text-sm font-extrabold tracking-wide text-white">RESTAURANT POS</h2>
-            <p className="text-[11px] text-slate-300">Table service · Kitchen orders · Split bills</p>
+            <h2 className="!text-white text-sm font-extrabold leading-tight tracking-wide">RESTAURANT POS</h2>
+            <div className="mt-0.5 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+              <p className="text-[10px] font-semibold text-emerald-300">Terminal ready · Table service · Kitchen orders</p>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -697,7 +700,7 @@ export default function POS() {
                   className="flex-none rounded-xl border border-blue-200 bg-white p-3 text-left shadow-sm transition hover:border-blue-400 hover:shadow-md active:scale-95"
                 >
                   <p className="text-[10px] font-bold uppercase text-blue-600">Table {order.table_name || order.table_id}</p>
-                  <p className="text-sm font-extrabold text-slate-900">{activeRestaurant?.currency || '$'}{parseFloat(order.total_amount).toFixed(2)}</p>
+                  <p className="text-sm font-extrabold text-slate-900">{activeRestaurant?.currency || '$'}{(Number(order.total_amount) || 0).toFixed(2)}</p>
                   <p className="mt-1 text-[9px] font-bold uppercase text-slate-400">ID: #{order.id}</p>
                 </button>
               ))}
@@ -767,8 +770,10 @@ export default function POS() {
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
             <button
               onClick={() => setSelectedCategory(null)}
-              className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-bold transition ${
-                !selectedCategory ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              className={`whitespace-nowrap rounded-full border px-4 py-2 text-xs font-bold transition ${
+                !selectedCategory
+                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-300'
               }`}
             >
               All Items
@@ -777,8 +782,10 @@ export default function POS() {
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-bold transition ${
-                  selectedCategory === cat.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                className={`whitespace-nowrap rounded-full border px-4 py-2 text-xs font-bold transition ${
+                  selectedCategory === cat.id
+                    ? 'border-emerald-600 bg-emerald-600 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-300'
                 }`}
               >
                 {cat.name}
@@ -796,7 +803,7 @@ export default function POS() {
               >
               <div className="flex items-start justify-between gap-2">
                 <p className="line-clamp-2 text-sm font-bold leading-5 text-slate-800 group-hover:text-emerald-800">{item.name}</p>
-                <p className="shrink-0 text-sm font-extrabold text-slate-900">{activeRestaurant?.currency || 'USD'}{parseFloat(item.price).toFixed(2)}</p>
+                <p className="shrink-0 text-sm font-extrabold text-emerald-700">{activeRestaurant?.currency || 'USD'}{parseFloat(item.price).toFixed(2)}</p>
                 </div>
                 
               <div className="mt-3 flex items-center justify-between gap-2">
@@ -1031,7 +1038,7 @@ export default function POS() {
           )}
           <div className="flex items-center justify-between rounded-xl bg-slate-900 px-3 py-2.5 text-white">
             <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-300">Amount due</span>
-            <span className="font-mono text-lg font-black text-emerald-400">{activeRestaurant?.currency || 'USD'}{total.toFixed(2)}</span>
+            <span className="text-lg font-extrabold leading-none text-emerald-400">{activeRestaurant?.currency || 'USD'}{total.toFixed(2)}</span>
           </div>
         </div>
               
@@ -1105,7 +1112,7 @@ export default function POS() {
                   <div className="flex justify-between text-slate-500"><span>Tax ({taxRate}%)</span><span>{activeRestaurant?.currency || 'USD'}{taxAmount.toFixed(2)}</span></div>
                   <div className="mt-2 flex items-center justify-between rounded-xl bg-slate-900 px-3 py-2.5 text-white">
                     <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-300">Amount due</span>
-                    <span className="font-mono text-xl font-black text-emerald-400">{activeRestaurant?.currency || 'USD'}{total.toFixed(2)}</span>
+                    <span className="text-xl font-extrabold leading-none text-emerald-400">{activeRestaurant?.currency || 'USD'}{total.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -1161,12 +1168,12 @@ export default function POS() {
                         step="0.01"
                         value={amountTendered}
                         onChange={event => setAmountTendered(event.target.value)}
-                        className="mt-1 w-full rounded-xl border-2 border-emerald-300 bg-white px-3 py-2 text-center font-mono text-xl font-extrabold text-slate-900 outline-none focus:border-emerald-500"
+                        className="mt-1 w-full rounded-xl border-2 border-emerald-300 bg-white px-3 py-2 text-center text-xl font-extrabold text-slate-900 outline-none focus:border-emerald-500"
                       />
                     </label>
                     <div className={`rounded-xl px-3 py-2 text-center ${changeDue > 0 ? 'bg-emerald-600 text-white' : 'bg-white text-slate-700'}`}>
                       <span className="text-[10px] font-extrabold uppercase tracking-wide">Change due</span>
-                      <p className="font-mono text-2xl font-black">{activeRestaurant?.currency || 'USD'}{changeDue.toFixed(2)}</p>
+                      <p className="text-2xl font-black">{activeRestaurant?.currency || 'USD'}{changeDue.toFixed(2)}</p>
                     </div>
                   </div>
                 )}

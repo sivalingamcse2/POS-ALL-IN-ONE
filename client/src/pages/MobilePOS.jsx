@@ -202,7 +202,7 @@ export default function MobilePOS() {
         <div className="flex items-center gap-2">
            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 font-black shadow-sm">S</div>
             <div>
-              <h1 className="text-sm font-extrabold leading-tight tracking-wide text-white">SIVARA MOBILE POS</h1>
+              <h1 className="!text-white text-sm font-extrabold leading-tight tracking-wide">SIVARA MOBILE POS</h1>
               <div className="mt-0.5 flex items-center gap-1.5">
                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
                 <p className="text-[10px] font-semibold text-emerald-300">Terminal ready · Cloud sync</p>
