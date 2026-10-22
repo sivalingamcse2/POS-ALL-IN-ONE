@@ -716,32 +716,6 @@ export default function POS() {
       <div className="grid flex-1 grid-cols-1 gap-3 lg:min-h-0 lg:overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
         {/* Left Panel - Tables & Menu */}
         <div className="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-hidden">
-        {/* Incoming Guest Orders Shelf */}
-        {apiOrders.length > 0 && (
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3 shadow-sm">
-            <h3 className="mb-2 flex justify-between text-xs font-extrabold uppercase tracking-wide text-blue-900">
-              <span>🔔 Incoming guest orders ({apiOrders.length})</span>
-              <span className="text-emerald-700">● Live</span>
-            </h3>
-            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-              {apiOrders.map(order => (
-                <button
-                  key={order.id}
-                  onClick={() => {
-                    const table = tables.find(t => t.id === order.table_id);
-                    if (table) handleTableSelect(table);
-                    else alert(`Order #${order.id} for ${order.table_name || 'Unknown Table'}`);
-                  }}
-                  className="flex-none rounded-xl border border-blue-200 bg-white p-3 text-left shadow-sm transition hover:border-blue-400 hover:shadow-md active:scale-95"
-                >
-                  <p className="text-[10px] font-bold uppercase text-blue-600">Table {order.table_name || order.table_id}</p>
-                  <p className="text-sm font-extrabold text-slate-900">{activeRestaurant?.currency || '$'}{(Number(order.total_amount) || 0).toFixed(2)}</p>
-                  <p className="mt-1 text-[9px] font-bold uppercase text-slate-400">ID: #{order.id}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Tables */}
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
