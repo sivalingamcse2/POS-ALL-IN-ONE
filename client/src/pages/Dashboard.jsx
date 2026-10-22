@@ -233,7 +233,7 @@ export default function Dashboard() {
           </button>
           <button
             type="button"
-            onClick={() => navigate('/pos')}
+            onClick={() => window.dispatchEvent(new CustomEvent('sivara-open-drawer', { detail: '/pos' }))}
             className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:border-emerald-300 hover:text-emerald-700"
           >
             Restaurant POS

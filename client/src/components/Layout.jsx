@@ -27,10 +27,12 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  // Mobile POS opens as a slide-over drawer instead of a full page.
-  const [mobilePosMounted, setMobilePosMounted] = useState(false);
-  const [mobilePosOpen, setMobilePosOpen] = useState(false);
+  // POS terminals open as slide-over drawers (left: module sidebar, right: terminal panel).
+  const [drawerPath, setDrawerPath] = useState(null);
+  const [drawerMounted, setDrawerMounted] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const isChromeless = new URLSearchParams(location.search).get('chromeless') === '1';
   const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirmation: '' });
   const [passwordError, setPasswordError] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
@@ -46,23 +48,44 @@ export default function Layout() {
     return unsub;
   }, []);
 
-  const openMobilePos = () => {
-    setMobilePosMounted(true);
-    // Double rAF: the panel must paint off-screen first, then slide to translate-x-0.
-    requestAnimationFrame(() => requestAnimationFrame(() => setMobilePosOpen(true)));
+  const drawerConfigs = {
+    '/mobile-pos': { title: 'MOBILE POS', width: 'w-full max-w-[440px]' },
+    '/pos': { title: 'RESTAURANT POS', width: 'w-[calc(100vw-32px)] max-w-[1240px]' },
   };
 
-  const closeMobilePos = () => setMobilePosOpen(false);
+  const openDrawer = path => {
+    setDrawerPath(path);
+    setDrawerMounted(true);
+    // Double rAF: the panel must paint off-screen first, then slide to translate-x-0.
+    requestAnimationFrame(() => requestAnimationFrame(() => setDrawerOpen(true)));
+  };
+
+  const closeDrawer = () => setDrawerOpen(false);
 
   useEffect(() => {
-    if (!mobilePosOpen) return;
-    const onKey = event => { if (event.key === 'Escape') setMobilePosOpen(false); };
+    const onKey = event => { if (event.key === 'Escape') setDrawerOpen(false); };
+    const onMessage = event => { if (event.data === 'sivara:close-drawer') setDrawerOpen(false); };
+    const onOpenRequest = event => { if (drawerConfigs[event.detail]) openDrawer(event.detail); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [mobilePosOpen]);
+    window.addEventListener('message', onMessage);
+    window.addEventListener('sivara-open-drawer', onOpenRequest);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('message', onMessage);
+      window.removeEventListener('sivara-open-drawer', onOpenRequest);
+    };
+  }, []);
+
+  // Inside the drawer iframe (chromeless), forward Escape to the parent so it can close the panel.
+  useEffect(() => {
+    if (!isChromeless) return;
+    const forwardKey = event => { if (event.key === 'Escape') window.parent.postMessage('sivara:close-drawer', '*'); };
+    window.addEventListener('keydown', forwardKey);
+    return () => window.removeEventListener('keydown', forwardKey);
+  }, [isChromeless]);
 
   const routerBase = import.meta.env.VITE_ROUTER_BASE || '/';
-  const mobilePosSrc = `${routerBase === '/' ? '' : routerBase}/mobile-pos?chromeless=1`;
+  const drawerSrc = `${routerBase === '/' ? '' : routerBase}${drawerPath || ''}?chromeless=1`;
 
   const handleLogout = async () => {
     await logout();
@@ -107,8 +130,8 @@ export default function Layout() {
   const isSupermarketActive = location.pathname === '/supermarket-pos';
   const isRestaurantActive = location.pathname === '/pos';
 
-  // Chromeless mode: rendered inside the Mobile POS drawer iframe (no sidebar/header).
-  if (new URLSearchParams(location.search).get('chromeless') === '1') {
+  // Chromeless mode: rendered inside the POS drawer iframe (no sidebar/header).
+  if (isChromeless) {
     return (
       <main className="app-main h-screen flex-1 overflow-auto bg-slate-100">
         <Outlet />
@@ -138,13 +161,13 @@ export default function Layout() {
         </div>
         
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {filteredMenuItems.map(item => item.path === '/mobile-pos' ? (
+          {filteredMenuItems.map(item => drawerConfigs[item.path] ? (
             <button
               key={item.path}
               type="button"
-              onClick={openMobilePos}
+              onClick={() => openDrawer(item.path)}
               className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all ${
-                mobilePosOpen
+                drawerOpen && drawerPath === item.path
                   ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-950/30'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
               }`}
@@ -217,7 +240,7 @@ export default function Layout() {
                 <span>🛒</span> Supermarket Mode
               </button>
               <button
-                onClick={() => navigate('/pos')}
+                onClick={() => openDrawer('/pos')}
                 className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
                   isRestaurantActive
                     ? 'bg-emerald-600 text-white shadow-sm'
@@ -322,30 +345,36 @@ export default function Layout() {
         </div>
       )}
 
-      {/* Mobile POS slide-in drawer */}
-      {mobilePosMounted && (
-        <div className={`fixed inset-0 z-[80] ${mobilePosOpen ? '' : 'pointer-events-none'}`} role="dialog" aria-label="Mobile POS">
+      {/* POS terminal slide-in drawer (Mobile POS / Restaurant POS) */}
+      {drawerMounted && drawerPath && (
+        <div
+          className={`fixed inset-0 z-[80] ${drawerOpen ? '' : 'pointer-events-none'}`}
+          role="dialog"
+          aria-label={drawerConfigs[drawerPath].title}
+          aria-hidden={!drawerOpen}
+          inert={!drawerOpen}
+        >
           <div
-            onClick={closeMobilePos}
-            className={`absolute inset-0 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300 ${mobilePosOpen ? 'opacity-100' : 'opacity-0'}`}
+            onClick={closeDrawer}
+            className={`absolute inset-0 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300 ${drawerOpen ? 'opacity-100' : 'opacity-0'}`}
           />
-          <div className={`absolute right-0 top-0 flex h-full w-full max-w-[440px] flex-col bg-slate-100 shadow-2xl transition-transform duration-300 ease-out ${mobilePosOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          <div className={`absolute right-0 top-0 flex h-full flex-col bg-slate-100 shadow-2xl transition-transform duration-300 ease-out ${drawerConfigs[drawerPath].width} ${drawerOpen ? 'translate-x-0' : 'translate-x-full'}`}>
             <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-2.5 text-white">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-sm font-black">S</div>
                 <div>
-                  <p className="text-xs font-extrabold leading-tight tracking-wide">MOBILE POS</p>
+                  <p className="text-xs font-extrabold leading-tight tracking-wide">{drawerConfigs[drawerPath].title}</p>
                   <p className="text-[9px] font-semibold text-emerald-300">Slide-over terminal</p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={closeMobilePos}
-                aria-label="Close Mobile POS"
+                onClick={closeDrawer}
+                aria-label={`Close ${drawerConfigs[drawerPath].title}`}
                 className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-bold text-slate-200 transition hover:bg-slate-700 hover:text-white"
               >✕ Close</button>
             </div>
-            <iframe title="Mobile POS Terminal" src={mobilePosSrc} className="min-h-0 w-full flex-1 border-0 bg-slate-100" />
+            <iframe key={drawerPath} title={`${drawerConfigs[drawerPath].title} Terminal`} src={drawerSrc} className="min-h-0 w-full flex-1 border-0 bg-slate-100" />
           </div>
         </div>
       )}

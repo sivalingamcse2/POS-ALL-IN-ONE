@@ -648,8 +648,10 @@ export default function POS() {
     });
   };
 
+  const isChromeless = new URLSearchParams(window.location.search).get('chromeless') === '1';
+
   return (
-    <div className="flex h-[calc(100vh-140px)] min-h-[560px] flex-col gap-3 font-sans">
+    <div className={`flex ${isChromeless ? 'h-screen' : 'h-[calc(100vh-140px)]'} min-h-[560px] flex-col gap-3 font-sans`}>
       {/* Top Banner: Restaurant Mode Bar */}
       <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-white shadow-md">
         <div className="flex items-center gap-2">
