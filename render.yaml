@@ -1,34 +1,34 @@
-# Render.com blueprint for the SIVARA POS backend.
-# Click "New +" -> "Blueprint" in https://dashboard.render.com and point at this repo,
-# OR visit: https://render.com/deploy?repo=sivalingamcse2/POS-ALL-IN-ONE
+# Render.com blueprint for SIVARA POS - single-service deployment.
 #
-# After the service is created, copy its External URL (e.g.
-# https://pos-api-abc123.onrender.com) into your GitHub repo as an Actions
-# variable named VITE_API_URL (Settings -> Secrets and variables -> Actions ->
-# Variables -> New repository variable). Then re-run the "Deploy POS UI to
-# GitHub Pages" workflow so the static bundle is rebuilt pointing at Render.
+# One web service serves BOTH the Express API (under /api) AND the built React
+# client (from client/dist). Because they share one origin, the SPA calls /api
+# directly and there are no CORS or GitHub Pages subpath issues.
+#
+# Deploy: visit https://render.com/deploy?repo=sivalingamcse2/POS-ALL-IN-ONE
+# or in the Render dashboard choose New + -> Blueprint and pick this repo.
+#
+# NOTE: The free tier uses the local JSON storage engine at <repo root>/local_db.json.
+# That file is EPHEMERAL on Render free instances - it resets when the service
+# restarts or after idle sleep. For durable data, attach a PostgreSQL instance
+# and set DATABASE_URL / DB_HOST.
 services:
   - type: web
-    name: pos-api
+    name: pos-app
     runtime: node
     plan: free
-    rootDir: server
-    buildCommand: npm ci --omit=dev
-    startCommand: node index.js
+    rootDir: .
+    buildCommand: npm --prefix server install && npm --prefix client install && npm --prefix client run build
+    startCommand: node server/index.js
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: 20
       - key: NODE_ENV
         value: production
-      # Render auto-injects PORT; do not set it manually.
-      # JWT_SECRET is generated fresh on first deploy. Rotate it from the
-      # Render dashboard any time; existing tokens will invalidate.
+      # Freshly generated on first deploy; rotate any time from the Render dashboard
+      # (rotating invalidates existing login tokens).
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 24h
-      # No PostgreSQL: the app falls back to the local JSON storage engine
-      # at server/../local_db.json (ephemeral on Render's free tier).
-      - key: DB_HOST
-        value: ""
+      # Leave DB_HOST unset so the app uses the local JSON storage engine.

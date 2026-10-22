@@ -162,6 +162,24 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// Serve the built React client (single-service production deployment, e.g. Render).
+// The client is bundled into client/dist by the build step. When dist is absent
+// (local dev with the separate Vite server on :4000), this block is skipped.
+const path = require('path');
+const fs = require('fs');
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  // SPA fallback: any non-API GET returns index.html so client-side routing works.
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      res.sendFile(path.join(clientDist, 'index.html'));
+    } else {
+      next();
+    }
+  });
+}
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
