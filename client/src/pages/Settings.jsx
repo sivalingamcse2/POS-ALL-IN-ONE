@@ -622,12 +622,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="mb-1 text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-700">Central administration</p>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">System Settings</h1>
-          <p className="mt-1 text-sm text-slate-500">Manage restaurant operations and access from one place.</p>
-        </div>
+      <div className="flex flex-wrap items-end justify-end gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm">
             <span className="font-semibold text-slate-500">Active store</span>
@@ -637,14 +632,7 @@ export default function Settings() {
           <button type="button" onClick={exportSettings} className="btn btn-secondary text-sm">Export JSON</button>
         </div>
       </div>
-      {serverMode === null ? (
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">Checking the settings server…</div>
-      ) : serverMode ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          Security policy, menu assignment, user roles, and the audit log are saved on the server.
-          {settingsSaved && <span className="ml-2 font-bold text-emerald-700" role="status">Saved.</span>}
-        </div>
-      ) : (
+      {serverMode === false && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <span>
             No settings server detected — this is the browser demo mode, so settings are saved in this browser only.
@@ -685,22 +673,6 @@ export default function Settings() {
       {/* Restaurant Settings */}
       {activeTab === 'restaurant' && (
         <div className="space-y-6">
-          {/* Info Banner */}
-          <div className="card !bg-blue-50 !border-l-4 !border-l-blue-500">
-            <div className="flex items-start gap-3">
-              <svg className="w-6 h-6 text-blue-500 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg>
-              <div>
-                <h3 className="font-bold text-blue-900 mb-1">Multi-Store Management</h3>
-                <p className="text-sm text-blue-700">
-                  You can access <strong>{visibleRestaurants.length}</strong> store(s), including restaurant branches and supermarkets.
-                  {isAdmin ? ' Add each supermarket location here, then switch the active store to manage its POS catalog.' : ' Contact an administrator to request access to another store.'}
-                </p>
-              </div>
-            </div>
-          </div>
-
           {restaurantError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{restaurantError}</div>}
           {restaurantNotice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{restaurantNotice}</div>}
           {restaurantsLoading && <div role="status" className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">Loading stores…</div>}
