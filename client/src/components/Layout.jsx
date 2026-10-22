@@ -27,7 +27,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  // POS terminals open as slide-over drawers (left: module sidebar, right: terminal panel).
+  // POS terminals open as a right-side slide-over panel; the left module sidebar stays visible.
   const [drawerPath, setDrawerPath] = useState(null);
   const [drawerMounted, setDrawerMounted] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -50,7 +50,7 @@ export default function Layout() {
 
   const drawerConfigs = {
     '/mobile-pos': { title: 'MOBILE POS', width: 'w-full max-w-[440px]' },
-    '/pos': { title: 'RESTAURANT POS', width: 'w-[calc(100vw-32px)] max-w-[1240px]' },
+    '/pos': { title: 'RESTAURANT POS', width: 'w-[calc(100vw-300px)] max-w-[1240px]' },
   };
 
   const openDrawer = path => {
@@ -76,7 +76,12 @@ export default function Layout() {
     };
   }, []);
 
-  // Inside the drawer iframe (chromeless), forward Escape to the parent so it can close the panel.
+  // Navigating to another module closes the panel so the page underneath is clear.
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+
+  // Inside the panel iframe (chromeless), forward Escape to the parent so it can close.
   useEffect(() => {
     if (!isChromeless) return;
     const forwardKey = event => { if (event.key === 'Escape') window.parent.postMessage('sivara:close-drawer', '*'); };
@@ -130,7 +135,7 @@ export default function Layout() {
   const isSupermarketActive = location.pathname === '/supermarket-pos';
   const isRestaurantActive = location.pathname === '/pos';
 
-  // Chromeless mode: rendered inside the POS drawer iframe (no sidebar/header).
+  // Chromeless mode: rendered inside the POS panel iframe (no sidebar/header).
   if (isChromeless) {
     return (
       <main className="app-main h-screen flex-1 overflow-auto bg-slate-100">
@@ -345,20 +350,16 @@ export default function Layout() {
         </div>
       )}
 
-      {/* POS terminal slide-in drawer (Mobile POS / Restaurant POS) */}
+      {/* POS terminal right-side slide-over panel (non-modal: left sidebar stays usable) */}
       {drawerMounted && drawerPath && (
         <div
-          className={`fixed inset-0 z-[80] ${drawerOpen ? '' : 'pointer-events-none'}`}
-          role="dialog"
+          className={`fixed inset-y-0 right-0 z-40 ${drawerOpen ? '' : 'pointer-events-none'}`}
+          role="complementary"
           aria-label={drawerConfigs[drawerPath].title}
           aria-hidden={!drawerOpen}
           inert={!drawerOpen}
         >
-          <div
-            onClick={closeDrawer}
-            className={`absolute inset-0 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300 ${drawerOpen ? 'opacity-100' : 'opacity-0'}`}
-          />
-          <div className={`absolute right-0 top-0 flex h-full flex-col bg-slate-100 shadow-2xl transition-transform duration-300 ease-out ${drawerConfigs[drawerPath].width} ${drawerOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          <div className={`flex h-full flex-col bg-slate-100 shadow-[-16px_0_40px_rgba(15,23,42,0.18)] ring-1 ring-slate-200 transition-transform duration-300 ease-out ${drawerConfigs[drawerPath].width} ${drawerOpen ? 'translate-x-0' : 'translate-x-full'}`}>
             <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-2.5 text-white">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-sm font-black">S</div>
