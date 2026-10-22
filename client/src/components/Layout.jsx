@@ -27,6 +27,9 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Mobile POS opens as a slide-over drawer instead of a full page.
+  const [mobilePosMounted, setMobilePosMounted] = useState(false);
+  const [mobilePosOpen, setMobilePosOpen] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirmation: '' });
   const [passwordError, setPasswordError] = useState('');
@@ -42,6 +45,24 @@ export default function Layout() {
     });
     return unsub;
   }, []);
+
+  const openMobilePos = () => {
+    setMobilePosMounted(true);
+    // Double rAF: the panel must paint off-screen first, then slide to translate-x-0.
+    requestAnimationFrame(() => requestAnimationFrame(() => setMobilePosOpen(true)));
+  };
+
+  const closeMobilePos = () => setMobilePosOpen(false);
+
+  useEffect(() => {
+    if (!mobilePosOpen) return;
+    const onKey = event => { if (event.key === 'Escape') setMobilePosOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobilePosOpen]);
+
+  const routerBase = import.meta.env.VITE_ROUTER_BASE || '/';
+  const mobilePosSrc = `${routerBase === '/' ? '' : routerBase}/mobile-pos?chromeless=1`;
 
   const handleLogout = async () => {
     await logout();
@@ -86,6 +107,15 @@ export default function Layout() {
   const isSupermarketActive = location.pathname === '/supermarket-pos';
   const isRestaurantActive = location.pathname === '/pos';
 
+  // Chromeless mode: rendered inside the Mobile POS drawer iframe (no sidebar/header).
+  if (new URLSearchParams(location.search).get('chromeless') === '1') {
+    return (
+      <main className="app-main h-screen flex-1 overflow-auto bg-slate-100">
+        <Outlet />
+      </main>
+    );
+  }
+
   return (
     <div className="app-shell flex h-screen bg-slate-100">
       {/* Sidebar */}
@@ -108,7 +138,23 @@ export default function Layout() {
         </div>
         
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-          {filteredMenuItems.map(item => (
+          {filteredMenuItems.map(item => item.path === '/mobile-pos' ? (
+            <button
+              key={item.path}
+              type="button"
+              onClick={openMobilePos}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all ${
+                mobilePosOpen
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-950/30'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+              </svg>
+              {sidebarOpen && <span>{item.label}</span>}
+            </button>
+          ) : (
             <NavLink
               key={item.path}
               to={item.path}
@@ -273,6 +319,34 @@ export default function Layout() {
               <button type="submit" disabled={passwordSaving} className="btn btn-primary">{passwordSaving ? 'Updating…' : 'Change password'}</button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Mobile POS slide-in drawer */}
+      {mobilePosMounted && (
+        <div className={`fixed inset-0 z-[80] ${mobilePosOpen ? '' : 'pointer-events-none'}`} role="dialog" aria-label="Mobile POS">
+          <div
+            onClick={closeMobilePos}
+            className={`absolute inset-0 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300 ${mobilePosOpen ? 'opacity-100' : 'opacity-0'}`}
+          />
+          <div className={`absolute right-0 top-0 flex h-full w-full max-w-[440px] flex-col bg-slate-100 shadow-2xl transition-transform duration-300 ease-out ${mobilePosOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+            <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-2.5 text-white">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-sm font-black">S</div>
+                <div>
+                  <p className="text-xs font-extrabold leading-tight tracking-wide">MOBILE POS</p>
+                  <p className="text-[9px] font-semibold text-emerald-300">Slide-over terminal</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeMobilePos}
+                aria-label="Close Mobile POS"
+                className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-bold text-slate-200 transition hover:bg-slate-700 hover:text-white"
+              >✕ Close</button>
+            </div>
+            <iframe title="Mobile POS Terminal" src={mobilePosSrc} className="min-h-0 w-full flex-1 border-0 bg-slate-100" />
+          </div>
         </div>
       )}
     </div>
