@@ -259,25 +259,84 @@ export default function Users() {
     }
   };
 
-  const exportEmployees = () => {
-    const columns = ['Employee ID', 'Name', 'Username', 'Email', 'Role', 'Restaurants', 'Status'];
-    const escapeCsv = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
-    const rows = filteredUsers.map(employee => [
-      employee.employee_id,
-      employee.full_name,
-      employee.username,
-      employee.email,
-      employee.role_name,
-      employee.restaurant_name,
-      employee.account_status || (employee.is_active ? 'active' : 'suspended'),
-    ]);
-    const csv = [columns, ...rows].map(row => row.map(escapeCsv).join(',')).join('\r\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const downloadBlob = (content, type, filename) => {
+    const url = URL.createObjectURL(new Blob([content], { type }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'employee-access.csv';
+    anchor.download = filename;
+    document.body.appendChild(anchor);
     anchor.click();
+    anchor.remove();
     URL.revokeObjectURL(url);
+  };
+
+  const reportFileName = extension => `employee-access-${new Date().toISOString().slice(0, 10)}.${extension}`;
+
+  const escapeHtml = value => String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const buildEmployeeTable = () => {
+    const columns = ['Employee ID', 'Name', 'Username', 'Email', 'Role', 'Restaurants', 'Status', 'Last login'];
+    const rows = filteredUsers.map(employee => [
+      employee.employee_id || '',
+      employee.full_name || employee.username || '',
+      employee.username || '',
+      employee.email || '',
+      employee.role_name || 'Unassigned',
+      employee.restaurant_name || '',
+      employee.account_status ? employee.account_status.replaceAll('_', ' ') : (employee.is_active ? 'active' : 'suspended'),
+      employee.last_login ? new Date(employee.last_login).toLocaleString() : 'Never',
+    ]);
+    return { columns, rows };
+  };
+
+  const exportCsv = () => {
+    const { columns, rows } = buildEmployeeTable();
+    const escapeCsv = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const csv = [columns, ...rows].map(row => row.map(escapeCsv).join(',')).join('\r\n');
+    downloadBlob('\uFEFF' + csv, 'text/csv;charset=utf-8', reportFileName('csv'));
+  };
+
+  const exportExcel = () => {
+    const { columns, rows } = buildEmployeeTable();
+    const headerCells = columns.map(column => `<th style="background:#0f766e;color:#ffffff;padding:8px;border:1px solid #cbd5e1;text-align:left;">${escapeHtml(column)}</th>`).join('');
+    const bodyRows = rows.map(row => `<tr>${row.map(cell => `<td style="padding:6px;border:1px solid #cbd5e1;">${escapeHtml(cell)}</td>`).join('')}</tr>`).join('');
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"/><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Employee Access</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head><body><table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;"><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
+    downloadBlob('\uFEFF' + html, 'application/vnd.ms-excel', reportFileName('xls'));
+  };
+
+  const exportPdf = () => {
+    const { columns, rows } = buildEmployeeTable();
+    const headerCells = columns.map(column => `<th>${escapeHtml(column)}</th>`).join('');
+    const bodyRows = rows.length
+      ? rows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')
+      : `<tr><td colspan="${columns.length}" style="text-align:center;padding:16px;color:#6b7280;">No employees found.</td></tr>`;
+    const generatedAt = new Date().toLocaleString();
+    const printWindow = window.open('', '_blank', 'width=1024,height=768');
+    if (!printWindow) {
+      setError('Please allow pop-ups in your browser, then try Download PDF again.');
+      return;
+    }
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Employee Access Report</title><style>
+      *{box-sizing:border-box;}
+      body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;margin:24px;}
+      .report-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #0f766e;padding-bottom:12px;margin-bottom:16px;}
+      .brand{font-size:20px;font-weight:bold;color:#0f766e;}
+      .subtitle{font-size:13px;color:#475569;margin-top:4px;}
+      .meta{font-size:11px;color:#64748b;text-align:right;}
+      table{width:100%;border-collapse:collapse;font-size:11px;}
+      th{background:#0f766e;color:#ffffff;padding:8px;border:1px solid #cbd5e1;text-align:left;}
+      td{padding:6px;border:1px solid #cbd5e1;}
+      tr:nth-child(even) td{background:#f8fafc;}
+      .report-foot{margin-top:16px;font-size:10px;color:#94a3b8;text-align:center;}
+      @media print{@page{size:A4 landscape;margin:12mm;}}
+    </style></head><body>
+      <div class="report-head"><div><div class="brand">ALL IN ONE POS</div><div class="subtitle">User &amp; Security Center &mdash; Employee Access</div></div><div class="meta">Generated: ${escapeHtml(generatedAt)}<br/>Total employees: ${rows.length}</div></div>
+      <table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
+      <div class="report-foot">&copy; ${new Date().getFullYear()} SIVARA GROUP &middot; All Rights Reserved</div>
+      <script>window.onload=function(){setTimeout(function(){window.print();},250);};</script>
+    </body></html>`);
+    printWindow.document.close();
   };
 
   const toggleRestaurant = id => {
@@ -292,15 +351,14 @@ export default function Users() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary-600">Access administration</p>
-          <h1 className="mt-1 text-3xl font-bold text-gray-900">User &amp; Security Center</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage employee accounts, restaurant access, roles, and account activation.</p>
-        </div>
+      <header className="flex flex-col items-end gap-4 sm:flex-row sm:justify-end sm:items-center">
         <div className="flex flex-wrap gap-2">
           {tab === 'employees' && hasPermission('UserMgmt', 'Export') && (
-            <button type="button" onClick={exportEmployees} className="btn border border-gray-300 bg-white text-gray-700">Export CSV</button>
+            <>
+              <button type="button" onClick={exportCsv} className="btn border border-gray-300 bg-white text-gray-700">Export CSV</button>
+              <button type="button" onClick={exportExcel} className="btn border border-emerald-600 bg-white text-emerald-700">Export Excel</button>
+              <button type="button" onClick={exportPdf} className="btn border border-red-600 bg-white text-red-700">Download PDF</button>
+            </>
           )}
           {tab === 'employees' && hasPermission('UserMgmt', 'Create') && (
             <button type="button" onClick={() => { setEmployeeForm(blankEmployee); setEditingEmployee(null); setShowEmployeeForm(true); }} className="btn btn-primary">
