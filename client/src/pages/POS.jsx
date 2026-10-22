@@ -19,6 +19,7 @@ export default function POS() {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [discount, setDiscount] = useState(0);
   const [discountPercentage, setDiscountPercentage] = useState(0);
+  const [vatRate, setVatRate] = useState(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerError, setCustomerError] = useState('');
@@ -279,7 +280,7 @@ export default function POS() {
   };
 
   const subtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const taxRate = activeRestaurant?.tax_rate || 0;
+  const taxRate = vatRate != null ? vatRate : (activeRestaurant?.tax_rate || 0);
   const discountAmount = Math.min(subtotal, Math.max(0, discountPercentage > 0 ? subtotal * (discountPercentage / 100) : discount));
   const taxAmount = (subtotal - discountAmount) * (taxRate / 100);
   const total = subtotal + taxAmount - discountAmount;
@@ -289,9 +290,16 @@ export default function POS() {
     setSelectedTable(table);
     
     try {
-      // 1. Check API first for orders on this table
+      // 1. Check API first for orders on this table.
+      // The orders API can return unrelated orders (its table/status filtering is not
+      // reliable on the local engine), so only accept an order that truly belongs to
+      // this table and is still active — otherwise a fresh table shows phantom money.
       const res = await posApi.getOrders({ table_id: table.id, status: 'Held' }).catch(() => ({ data: [] }));
-      let tableOrder = res.data?.[0];
+      const activeStatuses = ['held', 'pending', 'preparing', 'open'];
+      let tableOrder = (res.data || []).find(order =>
+        String(order.table_id) === String(table.id)
+        && activeStatuses.includes(String(order.status).toLowerCase())
+      );
       
       // 2. Fallback to LocalStorage
       if (!tableOrder) {
@@ -378,6 +386,33 @@ export default function POS() {
     setEmployeeId('');
     setDiscountPercentage(0);
     setDiscount(0);
+  };
+
+  const handleNewBill = () => {
+    if (!selectedTable) return;
+    if (orderItems.length > 0 && !window.confirm(`Start a new empty bill for ${selectedTable.table_name}? Any held order on this table will be cleared.`)) {
+      return;
+    }
+    const savedOrders = JSON.parse(localStorage.getItem('pos_orders') || '[]');
+    localStorage.setItem('pos_orders', JSON.stringify(savedOrders.filter(order => !(
+      String(order.table_id) === String(selectedTable.id)
+      && (order.status === 'Held' || order.status === 'Pending' || order.status === 'Preparing')
+    ))));
+    const allTables = JSON.parse(localStorage.getItem('pos_tables') || '[]');
+    localStorage.setItem('pos_tables', JSON.stringify(allTables.map(t => (
+      String(t.id) === String(selectedTable.id) ? { ...t, status: 'available' } : t
+    ))));
+    setCurrentOrder(null);
+    setOrderItems([]);
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerError('');
+    setSelectedCustomerId('');
+    setEmployeeId('');
+    setDiscount(0);
+    setDiscountPercentage(0);
+    setVatRate(null);
+    refetchTables();
   };
 
   const handleAddItem = (item) => {
@@ -1005,6 +1040,20 @@ export default function POS() {
           )}
         </div>
 
+        {/* VAT */}
+        <div className="mb-3">
+          <label className="mb-1 block text-[11px] font-bold text-slate-600">VAT (%)</label>
+          <input
+            type="number"
+            value={vatRate ?? (activeRestaurant?.tax_rate || 0)}
+            onChange={(e) => setVatRate(parseFloat(e.target.value) || 0)}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-50"
+            min="0"
+            step="0.01"
+            placeholder="0"
+          />
+        </div>
+
         {/* Discount */}
         <div className="mb-3 grid grid-cols-2 gap-3">
           <div>
@@ -1040,7 +1089,7 @@ export default function POS() {
             <span className="font-bold text-slate-800">{activeRestaurant?.currency || 'USD'}{subtotal.toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-slate-500">
-            <span>Tax ({taxRate}%)</span>
+            <span>VAT ({taxRate}%)</span>
             <span>{activeRestaurant?.currency || 'USD'}{taxAmount.toFixed(2)}</span>
           </div>
           {discountAmount > 0 && (
@@ -1081,6 +1130,13 @@ export default function POS() {
               Hold Bill
             </button>
           </div>
+          <button
+            onClick={handleNewBill}
+            disabled={!selectedTable}
+            className="w-full rounded-xl border border-rose-200 bg-rose-50 py-2 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+          >
+            New bill / clear held order for this table
+          </button>
         </div>
       </div>
 
@@ -1122,7 +1178,7 @@ export default function POS() {
                 <div className="space-y-1.5 border-t border-slate-100 bg-slate-50 px-3 py-3 text-xs">
                   <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>{activeRestaurant?.currency || 'USD'}{subtotal.toFixed(2)}</span></div>
                   {discountAmount > 0 && <div className="flex justify-between font-semibold text-emerald-700"><span>Discount{discountPercentage > 0 ? ` (${discountPercentage}%)` : ''}</span><span>-{activeRestaurant?.currency || 'USD'}{discountAmount.toFixed(2)}</span></div>}
-                  <div className="flex justify-between text-slate-500"><span>Tax ({taxRate}%)</span><span>{activeRestaurant?.currency || 'USD'}{taxAmount.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-slate-500"><span>VAT ({taxRate}%)</span><span>{activeRestaurant?.currency || 'USD'}{taxAmount.toFixed(2)}</span></div>
                   <div className="mt-2 flex items-center justify-between rounded-xl bg-slate-900 px-3 py-2.5 text-white">
                     <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-300">Amount due</span>
                     <span className="text-xl font-extrabold leading-none text-emerald-400">{activeRestaurant?.currency || 'USD'}{total.toFixed(2)}</span>
