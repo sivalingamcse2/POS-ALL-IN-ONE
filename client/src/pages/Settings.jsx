@@ -63,6 +63,11 @@ const normalizeServerLogs = rows => (rows || []).map(row => ({
   details: row.details || '',
 }));
 
+// The settings server is only considered "absent" when a request fails at the
+// network level (no HTTP response at all). If the server answered — even with an
+// error status — it exists, so we must NOT drop the page into browser demo mode.
+const isServerUnreachable = error => !error?.response;
+
 const emptyUserPermissions = () => permissionGroups.reduce((permissions, group) => {
   permissions[group.key] = permissionActions.reduce((actions, action) => {
     actions[action] = false;
@@ -130,6 +135,7 @@ export default function Settings() {
   const [settingsError, setSettingsError] = useState('');
   const [assignedItemIds, setAssignedItemIds] = useState([]);
   const [menuReloadKey, setMenuReloadKey] = useState(0);
+  const [probeKey, setProbeKey] = useState(0);
 
   const selectedAccessUser = accessUsers.find(accessUser => String(accessUser.id) === String(selectedAccessUserId));
   const selectedAccessRole = roles
@@ -272,7 +278,7 @@ export default function Settings() {
             .then(({ data }) => setAuditLogs(normalizeServerLogs(data)))
             .catch(() => {});
         })
-        .catch(() => setServerMode(false));
+        .catch(error => { if (isServerUnreachable(error)) setServerMode(false); });
     }
   };
 
@@ -455,13 +461,18 @@ export default function Settings() {
           })
           .catch(() => {});
       })
-      .catch(() => {
+      .catch(error => {
         if (!current) return;
-        setServerMode(false);
-        if (savedPolicy) setSecurityPolicy(previous => ({ ...previous, ...savedPolicy }));
+        if (isServerUnreachable(error)) {
+          setServerMode(false);
+          if (savedPolicy) setSecurityPolicy(previous => ({ ...previous, ...savedPolicy }));
+        } else {
+          // The server responded (e.g. an auth or transient error) — it is present.
+          setServerMode(true);
+        }
       });
     return () => { current = false; };
-  }, []);
+  }, [probeKey]);
 
   useEffect(() => {
     if (!serverMode || !selectedMenuRestaurantId) return;
@@ -472,7 +483,11 @@ export default function Settings() {
         setMenuItems(data);
         setAssignedItemIds(data.filter(item => item.assigned).map(item => Number(item.id)));
       })
-      .catch(() => setServerMode(false));
+      .catch(error => {
+        // Keep server mode intact: a menu-assignment read error is handled in the UI,
+        // it does not mean the backend disappeared.
+        if (current && isServerUnreachable(error)) setServerMode(false);
+      });
     return () => { current = false; };
   }, [serverMode, selectedMenuRestaurantId, menuReloadKey]);
 
@@ -480,7 +495,7 @@ export default function Settings() {
     if (!serverMode) return;
     settingsApi.getAuditLog()
       .then(({ data }) => setAuditLogs(normalizeServerLogs(data)))
-      .catch(() => setServerMode(false));
+      .catch(error => { if (isServerUnreachable(error)) setServerMode(false); });
   };
 
   useEffect(() => { if (serverMode) refreshAuditLog(); }, [serverMode]);
@@ -630,9 +645,18 @@ export default function Settings() {
           {settingsSaved && <span className="ml-2 font-bold text-emerald-700" role="status">Saved.</span>}
         </div>
       ) : (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          No settings server detected — this is the browser demo mode, so settings are saved in this browser only.
-          {settingsSaved && <span className="ml-2 font-bold text-emerald-700" role="status">Saved in this browser.</span>}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span>
+            No settings server detected — this is the browser demo mode, so settings are saved in this browser only.
+            {settingsSaved && <span className="ml-2 font-bold text-emerald-700" role="status">Saved in this browser.</span>}
+          </span>
+          <button
+            type="button"
+            onClick={() => { setServerMode(null); setProbeKey(key => key + 1); }}
+            className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 transition hover:bg-amber-100"
+          >
+            Reconnect to server
+          </button>
         </div>
       )}
       {settingsNotice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{settingsNotice}</div>}
