@@ -1014,20 +1014,6 @@ export default function POS() {
           )}
         </div>
 
-        {/* VAT */}
-        <div className="mb-3">
-          <label className="mb-1 block text-[11px] font-bold text-slate-600">VAT (%)</label>
-          <input
-            type="number"
-            value={vatRate ?? (activeRestaurant?.tax_rate || 0)}
-            onChange={(e) => setVatRate(parseFloat(e.target.value) || 0)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-50"
-            min="0"
-            step="0.01"
-            placeholder="0"
-          />
-        </div>
-
         {/* Discount */}
         <div className="mb-3 grid grid-cols-2 gap-3">
           <div>
