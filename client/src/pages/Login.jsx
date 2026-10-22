@@ -30,8 +30,8 @@ export default function Login() {
     <div className="login-shell">
       <main className="login-card">
         <div className="mb-9 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-md bg-[#102a43] text-xl font-bold text-white">S</div>
-          <h1 className="text-4xl font-bold tracking-[-0.03em] text-[#102a43]">SIVARA <span className="text-[#2f78a0]">POS</span></h1>
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-md bg-[#102a43] text-xl font-bold text-white">A</div>
+          <h1 className="text-4xl font-bold tracking-[-0.03em] text-[#102a43]">ALL IN ONE <span className="text-[#2f78a0]">POS</span></h1>
           <p className="mt-2 text-sm font-bold uppercase tracking-[0.18em] text-[#667789]">Sign in to continue</p>
         </div>
 
@@ -82,6 +82,9 @@ export default function Login() {
 
         </form>
 
+        <p className="mt-8 text-center text-[11px] font-bold uppercase tracking-[0.15em] text-[#738087]">
+          © {new Date().getFullYear()} SIVARA GROUP · All Rights Reserved
+        </p>
       </main>
     </div>
   );

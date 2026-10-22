@@ -142,7 +142,7 @@ export default function MobilePOS() {
     receiptWindow.document.write(`
       <html><head><title>Receipt #${order.id}</title>
       <style>body{font-family:Arial,sans-serif;padding:24px;color:#172b35}h1{text-align:center;font-size:22px}.meta{border-bottom:1px solid #ddd;padding-bottom:12px;margin-bottom:12px}.row{display:flex;justify-content:space-between;margin:8px 0}.total{border-top:2px solid #172b35;padding-top:12px;font-weight:bold;font-size:18px}</style>
-      </head><body><h1>${activeRestaurant?.name || 'SIVARA POS'}</h1>
+      </head><body><h1>${activeRestaurant?.name || 'ALL IN ONE POS'}</h1>
       <div class="meta">Receipt #${order.id}<br>${new Date(order.date).toLocaleString()}<br>Customer: ${order.customer_name || 'Walk-in'}<br>Mobile: ${order.customer_phone || 'N/A'}<br>${order.room_number ? `Room: ${order.room_number}` : `Service: ${order.service_type}`}</div>
       ${order.items.map(item => `<div class="row"><span>${item.quantity} x ${item.item_name}</span><span>${currency}${(item.price * item.quantity).toFixed(2)}</span></div>`).join('')}
       <div class="row total"><span>Total</span><span>${currency}${Number(order.total_amount).toFixed(2)}</span></div>
@@ -200,9 +200,9 @@ export default function MobilePOS() {
       {/* Header */}
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-3 text-white shadow-md sm:px-6">
         <div className="flex items-center gap-2">
-           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 font-black shadow-sm">S</div>
+           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 font-black shadow-sm">A</div>
             <div>
-              <h1 className="!text-white text-sm font-extrabold leading-tight tracking-wide">SIVARA MOBILE POS</h1>
+              <h1 className="!text-white text-sm font-extrabold leading-tight tracking-wide">ALL IN ONE MOBILE POS</h1>
               <div className="mt-0.5 flex items-center gap-1.5">
                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
                 <p className="text-[10px] font-semibold text-emerald-300">Terminal ready · Cloud sync</p>

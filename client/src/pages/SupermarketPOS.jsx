@@ -354,7 +354,7 @@ export default function SupermarketPOS() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-extrabold text-lg tracking-wide uppercase">SIVARA SUPERMARKET POS</h1>
+              <h1 className="font-extrabold text-lg tracking-wide uppercase">ALL IN ONE SUPERMARKET POS</h1>
               <span className="px-2 py-0.5 bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold rounded-full">
                 ADVANCED RETAIL
               </span>

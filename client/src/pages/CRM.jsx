@@ -163,12 +163,12 @@ export default function CRM() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-black text-gray-800 tracking-tighter">SIVARA <span className="text-indigo-600">CRM & LOYALTY</span></h1>
+        <h1 className="text-3xl font-black text-gray-800 tracking-tighter">ALL IN ONE <span className="text-indigo-600">CRM & LOYALTY</span></h1>
         <div className="flex gap-3">
            <button onClick={exportToCsv} disabled={!hasValidDateRange} className="btn bg-green-600 text-white disabled:cursor-not-allowed disabled:opacity-50">Excel</button>
            <button onClick={exportToPdf} disabled={!hasValidDateRange} className="btn bg-red-600 text-white disabled:cursor-not-allowed disabled:opacity-50">PDF</button>
            <button 
-             onClick={() => alert("SIVARA AI BOT:\n\nAnalyzing customer behavior...\nFound 12 guests who haven't visited in 30 days.\nSending personalized 15% discount coupons via WhatsApp...")}
+             onClick={() => alert("AI BOT:\n\nAnalyzing customer behavior...\nFound 12 guests who haven't visited in 30 days.\nSending personalized 15% discount coupons via WhatsApp...")}
              className="btn bg-indigo-600 text-white text-xs px-4 flex items-center gap-2 animate-pulse"
            >
              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" /></svg>

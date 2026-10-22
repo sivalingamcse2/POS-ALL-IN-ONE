@@ -10,7 +10,7 @@ export default function ThermalReceipt({ order, storeInfo, onClose }) {
   };
 
   const store = storeInfo || {
-    name: 'SIVARA SUPERMARKET & DINING',
+    name: 'ALL IN ONE MARKET & DINING',
     address: '123 Commercial Plaza, Main Street',
     phone: '+1-555-SIVARA',
     tax_number: 'VAT-992-881-01',

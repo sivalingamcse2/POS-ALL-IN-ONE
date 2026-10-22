@@ -286,7 +286,7 @@ export default function ShiftManager({ isOpen, onClose, currentCashier = 'Admin'
 
                 <div className="bg-gray-50 p-6 rounded-xl border border-dashed border-gray-300 font-mono text-xs max-w-md mx-auto space-y-2">
                   <div className="text-center pb-2 border-b border-dashed border-gray-400">
-                    <p className="font-extrabold text-sm uppercase">SIVARA SYSTEM</p>
+                    <p className="font-extrabold text-sm uppercase">ALL IN ONE SYSTEM</p>
                     <p className="font-bold">*** FISCAL X-REPORT ***</p>
                     <p className="text-[10px] text-gray-500">INTERIM AUDIT (DO NOT CLEAR DRAWER)</p>
                   </div>
@@ -362,7 +362,7 @@ export default function ShiftManager({ isOpen, onClose, currentCashier = 'Admin'
 
                 <div className="bg-gray-50 p-6 rounded-xl border border-dashed border-gray-300 font-mono text-xs max-w-md mx-auto space-y-2">
                   <div className="text-center pb-2 border-b border-dashed border-gray-400">
-                    <p className="font-extrabold text-sm uppercase">SIVARA SYSTEM</p>
+                    <p className="font-extrabold text-sm uppercase">ALL IN ONE SYSTEM</p>
                     <p className="font-bold text-red-600">*** OFFICIAL Z-REPORT ***</p>
                     <p className="text-[10px] text-gray-500">FINAL END-OF-DAY AUDIT (REGISTER CLOSED)</p>
                   </div>

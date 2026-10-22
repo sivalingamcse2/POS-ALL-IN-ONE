@@ -25,7 +25,7 @@ export default function Hospitality() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-black text-gray-800">SIVARA <span className="text-primary-600">HOSPITALITY SUITE</span></h1>
+        <h1 className="text-3xl font-black text-gray-800">ALL IN ONE <span className="text-primary-600">HOSPITALITY SUITE</span></h1>
         <div className="bg-emerald-100 text-emerald-700 px-4 py-2 rounded-2xl text-xs font-black border border-emerald-200 shadow-sm animate-pulse">
           PMS SYNC: CONNECTED (OPERA V5)
         </div>

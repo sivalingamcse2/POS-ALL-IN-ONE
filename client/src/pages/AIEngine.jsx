@@ -19,7 +19,7 @@ export default function AIEngine() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-black text-gray-800 tracking-tight">SIVARA <span className="text-indigo-600">AI SMART ENGINE</span></h1>
+        <h1 className="text-3xl font-black text-gray-800 tracking-tight">ALL IN ONE <span className="text-indigo-600">AI SMART ENGINE</span></h1>
         <div className="flex gap-2">
            <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-[10px] font-black uppercase">Core: GPT-4o Hospitality</span>
            <span className="bg-indigo-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase">Neural Sync Active</span>

@@ -93,7 +93,7 @@ export default function Layout() {
         <div className="flex items-center justify-between border-b border-slate-800 p-4">
           <div className={`${!sidebarOpen && 'hidden'}`}>
             <h1 className="flex items-center gap-1.5 text-lg font-extrabold tracking-wide text-white">
-              <span className="text-emerald-400">⚡</span> SIVARA POS
+              <span className="text-emerald-400">⚡</span> ALL IN ONE POS
             </h1>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Supermarket & Dining</p>
           </div>
@@ -155,7 +155,7 @@ export default function Layout() {
           <div className="flex items-center gap-4">
             <div>
               <h2 className="text-base font-extrabold text-slate-900">{activeRestaurant?.name || 'SIVARA Group'}</h2>
-              <p className="text-[11px] font-semibold text-slate-500">{activeRestaurant?.currency || 'USD'} • Enterprise POS v2.0</p>
+              <p className="text-[11px] font-semibold text-slate-500">{activeRestaurant?.currency || 'USD'} • ALL IN ONE POS v2.0</p>
             </div>
 
             {/* Quick Dual-Mode Switcher */}
@@ -242,6 +242,13 @@ export default function Layout() {
         <main className="app-main flex-1 overflow-auto p-4 sm:p-5">
           <Outlet />
         </main>
+
+        {/* Bottom copyright bar */}
+        <footer className="flex items-center justify-center border-t border-slate-200 bg-white py-2">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            © {new Date().getFullYear()} SIVARA GROUP · All Rights Reserved
+          </p>
+        </footer>
       </div>
       {showPasswordForm && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">

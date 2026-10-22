@@ -106,7 +106,7 @@ export default function Kiosk() {
       {/* Main Grid */}
       <div className="flex-1 p-8 overflow-y-auto">
         <div className="flex justify-between items-center mb-10">
-          <h1 className="text-4xl font-black text-gray-800">SIVARA GROUP <span className="text-primary-600">SELF-ORDER</span></h1>
+          <h1 className="text-4xl font-black text-gray-800">ALL IN ONE <span className="text-primary-600">SELF-ORDER</span></h1>
           <div className="text-right">
             <p className="text-sm font-bold text-gray-400">WELCOME TO</p>
             <p className="text-xl font-bold text-gray-800">{activeRestaurant?.name}</p>

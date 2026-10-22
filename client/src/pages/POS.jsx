@@ -653,7 +653,7 @@ export default function POS() {
       {/* Top Banner: Restaurant Mode Bar */}
       <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-white shadow-md">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 font-black shadow-sm">S</div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 font-black shadow-sm">A</div>
           <div>
             <h2 className="!text-white text-sm font-extrabold leading-tight tracking-wide">RESTAURANT POS</h2>
             <div className="mt-0.5 flex items-center gap-1.5">
