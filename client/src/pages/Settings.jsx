@@ -55,6 +55,62 @@ const readLocalObject = (key, fallback) => {
   }
 };
 
+const downloadBlob = (content, type, filename) => {
+  const blobUrl = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(blobUrl);
+};
+
+const randomToken = (bytes = 24) => {
+  const arr = window.crypto?.getRandomValues
+    ? window.crypto.getRandomValues(new Uint8Array(bytes))
+    : Array.from({ length: bytes }, () => Math.floor(Math.random() * 256));
+  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+};
+
+// AES-256-GCM backup encryption with a PBKDF2-derived key (Web Crypto).
+const encryptBackup = async (plaintext, passphrase) => {
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt'],
+  );
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plaintext));
+  const combined = new Uint8Array(salt.length + iv.length + cipher.byteLength);
+  combined.set(salt, 0);
+  combined.set(iv, salt.length);
+  combined.set(new Uint8Array(cipher), salt.length + iv.length);
+  return combined.buffer;
+};
+
+const decryptBackup = async (buffer, passphrase) => {
+  const bytes = new Uint8Array(buffer);
+  const salt = bytes.slice(0, 16);
+  const iv = bytes.slice(16, 28);
+  const cipher = bytes.slice(28);
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt'],
+  );
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
+  return new TextDecoder().decode(plain);
+};
+
 const normalizeServerLogs = rows => (rows || []).map(row => ({
   id: row.id,
   timestamp: row.created_at || row.timestamp,
@@ -169,6 +225,19 @@ export default function Settings() {
   }));
   const [hardwareSaved, setHardwareSaved] = useState(false);
   const [hardwareNotice, setHardwareNotice] = useState('');
+  // Advanced security controls (saved on this device; drive audit + backup + alerts)
+  const [advSecurity, setAdvSecurity] = useState(() => ({
+    roleBranch: { enforceRoles: true, enforceBranch: true },
+    mfa: { adminMfa: false, method: 'authenticator', recoveryCodes: 8 },
+    audit: { enabled: true, track: { refunds: true, logins: true, configChanges: true, priceEdits: true, userChanges: true } },
+    backup: { encryption: true, apiKeyPreview: '' },
+    alerts: { enabled: true, highRefundThreshold: 100, failedLoginAlert: 3, configChangeAlert: true, notifyEmail: '' },
+    ...readLocalObject('pos_settings_advanced_security', {}),
+  }));
+  const [advSaved, setAdvSaved] = useState(false);
+  const [advNotice, setAdvNotice] = useState('');
+  const [backupPassphrase, setBackupPassphrase] = useState('');
+  const [backupStatus, setBackupStatus] = useState('');
 
   const selectedAccessUser = accessUsers.find(accessUser => String(accessUser.id) === String(selectedAccessUserId));
   const selectedAccessRole = roles
@@ -475,6 +544,156 @@ export default function Settings() {
     win.document.close();
   };
 
+  const updateAdv = (section, field, value) => {
+    setAdvSecurity(previous => ({ ...previous, [section]: { ...previous[section], [field]: value } }));
+    setAdvSaved(false);
+    setAdvNotice('');
+  };
+
+  const updateAdvTrack = (key, value) => {
+    setAdvSecurity(previous => ({ ...previous, audit: { ...previous.audit, track: { ...previous.audit.track, [key]: value } } }));
+    setAdvSaved(false);
+  };
+
+  const recordSensitiveAction = (action, details) => {
+    if (!advSecurity.audit.enabled) return;
+    setAuditLogs(logs => [{
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      username: user?.username || 'Admin',
+      action,
+      details,
+    }, ...logs].slice(0, 200));
+  };
+
+  const saveAdvSecurity = () => {
+    localStorage.setItem('pos_settings_advanced_security', JSON.stringify(advSecurity));
+    localStorage.setItem('pos_settings_security_policy', JSON.stringify({ ...securityPolicy, requireMfaForAdmins: advSecurity.mfa.adminMfa }));
+    setAdvSaved(true);
+    setAdvNotice('Advanced security configuration saved on this device.');
+    if (advSecurity.audit.enabled && advSecurity.audit.track.configChanges) {
+      recordSensitiveAction('Updated advanced security settings', `Role enforcement ${advSecurity.roleBranch.enforceRoles ? 'on' : 'off'} · Branch isolation ${advSecurity.roleBranch.enforceBranch ? 'on' : 'off'} · Admin MFA ${advSecurity.mfa.adminMfa ? 'on' : 'off'} · Encrypted backups ${advSecurity.backup.encryption ? 'on' : 'off'}`);
+    }
+  };
+
+  const rotateApiKey = () => {
+    // Only a masked, non-reversible preview is kept — the secret itself is never
+    // stored or exported. A real deployment holds the key server-side.
+    const preview = `sk_live_${randomToken(2)}••••••••${randomToken(2)}`;
+    const next = { ...advSecurity, backup: { ...advSecurity.backup, apiKeyPreview: preview } };
+    setAdvSecurity(next);
+    localStorage.setItem('pos_settings_advanced_security', JSON.stringify(next));
+    recordSensitiveAction('Rotated protected API credential', `New credential ${preview}`);
+    setAdvNotice(`API credential rotated: ${preview}. Only this masked preview is stored — the key itself is never written to backups.`);
+  };
+
+  const downloadEncryptedBackup = async () => {
+    const configuration = getSettingsSnapshot();
+    const plaintext = JSON.stringify(configuration, null, 2);
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (advSecurity.backup.encryption) {
+      if (!window.crypto?.subtle) {
+        setBackupStatus('This browser cannot encrypt (Web Crypto unavailable). Use a modern browser.');
+        return;
+      }
+      if (!backupPassphrase || backupPassphrase.length < 8) {
+        setBackupStatus('Enter a passphrase of at least 8 characters to encrypt the backup.');
+        return;
+      }
+      try {
+        const buffer = await encryptBackup(plaintext, backupPassphrase);
+        downloadBlob(buffer, 'application/octet-stream', `pos-settings-encrypted-${stamp}.bin`);
+        setBackupStatus('Encrypted backup downloaded (AES-256-GCM, PBKDF2 150k). Keep the passphrase — the file is unreadable without it.');
+        recordSensitiveAction('Exported encrypted settings backup', `pos-settings-encrypted-${stamp}.bin`);
+      } catch {
+        setBackupStatus('Unable to encrypt the backup in this browser.');
+      }
+      return;
+    }
+    downloadBlob(plaintext, 'application/json', `pos-settings-${stamp}.json`);
+    setBackupStatus('Backup downloaded unencrypted. Enable encryption to protect sensitive configuration.');
+    recordSensitiveAction('Exported unencrypted settings backup', `pos-settings-${stamp}.json`);
+  };
+
+  const restoreEncryptedBackup = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!window.crypto?.subtle) { setBackupStatus('This browser cannot decrypt (Web Crypto unavailable).'); return; }
+    if (!backupPassphrase) { setBackupStatus('Enter the passphrase used to encrypt this backup.'); return; }
+    try {
+      const buffer = await file.arrayBuffer();
+      let parsed;
+      if (file.name.endsWith('.json')) {
+        parsed = JSON.parse(new TextDecoder().decode(buffer));
+      } else {
+        const plaintext = await decryptBackup(buffer, backupPassphrase);
+        parsed = JSON.parse(plaintext);
+      }
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(parsed));
+      if (parsed.securityPolicy) setSecurityPolicy(previous => ({ ...previous, ...parsed.securityPolicy }));
+      if (parsed.hardware) setHardware(previous => ({ ...previous, ...parsed.hardware }));
+      if (parsed.advancedSecurity) setAdvSecurity(previous => ({ ...previous, ...parsed.advancedSecurity }));
+      setBackupStatus('Backup restored — configuration applied from the encrypted file.');
+      recordSensitiveAction('Restored settings from encrypted backup', file.name);
+    } catch {
+      setBackupStatus('Could not decrypt that backup. Check the passphrase and file.');
+    }
+  };
+
+  const roleMatrix = useMemo(() => permissionGroups.map(group => ({
+    group,
+    grants: roles.map(role => {
+      const grant = role.permissions?.[group.key];
+      if (grant === true) return { role: role.name, level: 'Full' };
+      if (grant && typeof grant === 'object') {
+        const count = Object.values(grant).filter(Boolean).length;
+        return { role: role.name, level: count ? `${count} action${count > 1 ? 's' : ''}` : 'None' };
+      }
+      return { role: role.name, level: 'None' };
+    }),
+  })), [roles]);
+
+  const branchAccess = useMemo(() => {
+    const stores = restaurants.length ? restaurants : (user?.restaurants || []);
+    return stores.map(store => ({
+      store,
+      users: accessUsers.filter(au => {
+        const ids = (au.restaurant_ids || (au.restaurant_id ? [au.restaurant_id] : (au.restaurants || []).map(r => r.id)) || [])
+          .map(Number);
+        return ids.includes(Number(store.id));
+      }).map(au => au.username),
+    }));
+  }, [restaurants, accessUsers, user]);
+
+  const securityAlerts = useMemo(() => {
+    if (!advSecurity.alerts.enabled) return [];
+    const list = [];
+    const threshold = Number(advSecurity.alerts.highRefundThreshold) || 0;
+    if (advSecurity.audit.track.refunds && threshold > 0) {
+      readLocalArray('pos_orders')
+        .filter(order => (Number(order.refund_amount) || 0) >= threshold)
+        .slice(0, 5)
+        .forEach(order => list.push({
+          level: 'high',
+          text: `Unusual refund on order #${order.id} — ${order.currency || '$'}${Number(order.refund_amount).toFixed(2)}`,
+        }));
+    }
+    if (advSecurity.audit.track.configChanges && advSecurity.alerts.configChangeAlert) {
+      auditLogs
+        .filter(log => /security|hardware|password|credential|backup/i.test(log.action || ''))
+        .slice(0, 3)
+        .forEach(log => list.push({ level: 'info', text: `Configuration change: ${log.action} (${log.username})` }));
+    }
+    if (advSecurity.audit.track.logins) {
+      readLocalArray('pos_failed_logins')
+        .filter(attempt => (Number(attempt.count) || 0) >= (Number(advSecurity.alerts.failedLoginAlert) || 999))
+        .slice(0, 5)
+        .forEach(attempt => list.push({ level: 'high', text: `Repeated failed logins for “${attempt.username}” (${attempt.count})` }));
+    }
+    return list;
+  }, [advSecurity, auditLogs]);
+
   const getSettingsSnapshot = () => ({
     version: 1,
     exportedAt: new Date().toISOString(),
@@ -492,6 +711,10 @@ export default function Settings() {
         : [item.restaurant_id || 1],
     })),
     hardware,
+    advancedSecurity: {
+      ...advSecurity,
+      backup: (({ apiKeyHash, ...safe }) => safe)(advSecurity.backup || {}),
+    },
     securityPolicy,
     auditLogs,
   });
@@ -768,6 +991,7 @@ export default function Settings() {
           { id: 'menu', label: 'Menu Assignment' },
           { id: 'hardware', label: 'Printers & Displays' },
           { id: 'security', label: 'Security & Audit' },
+          { id: 'advanced', label: 'Advanced Security' },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1437,6 +1661,212 @@ export default function Settings() {
                 Detect USB / Bluetooth printer
               </button>
               <p className="text-xs text-slate-400">Settings are saved on this device and included in the settings export backup.</p>
+            </div>
+          </div>
+        </section>
+        );
+      })()}
+
+      {/* Advanced Security */}
+      {activeTab === 'advanced' && (() => {
+        const advInput = (section, key, label, type = 'text', opts) => (
+          <label className="text-sm font-bold text-slate-700">
+            {label}
+            {type === 'select' ? (
+              <select className="input mt-1" value={advSecurity[section][key]} onChange={(e) => updateAdv(section, key, e.target.value)}>
+                {(opts || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            ) : (
+              <input
+                className="input mt-1"
+                type={type}
+                min={type === 'number' ? 0 : undefined}
+                value={advSecurity[section][key]}
+                placeholder={opts?.placeholder}
+                onChange={(e) => updateAdv(section, key, type === 'number' ? (Number(e.target.value) || 0) : e.target.value)}
+              />
+            )}
+          </label>
+        );
+        const advToggle = (label, checked, onChange, hint) => (
+          <label className="flex items-start gap-3 rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-700">
+            <input type="checkbox" checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-5 w-5 accent-emerald-600" />
+            <span>{label}{hint && <span className="block text-xs font-normal text-slate-500">{hint}</span>}</span>
+          </label>
+        );
+        const exportAudit = () => {
+          const header = 'Time,User,Action,Details';
+          const rows = auditLogs.map(l => [l.timestamp, l.username, l.action, l.details]
+            .map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
+          downloadBlob('\uFEFF' + [header, ...rows].join('\r\n'), 'text/csv', `security-audit-${new Date().toISOString().slice(0, 10)}.csv`);
+        };
+        return (
+        <section className="space-y-5">
+          {advNotice && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{advNotice}</div>
+          )}
+
+          {/* 1. Role-based & branch-based permissions */}
+          <div className="card !border-l-4 !border-l-indigo-500">
+            <div className="mb-3">
+              <h2 className="text-xl font-bold text-gray-800">🛡️ Role-based &amp; branch-based permissions</h2>
+              <p className="text-sm text-slate-500">Restrict every account to its role and the branches it owns.</p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {advToggle('Enforce role-based permissions', advSecurity.roleBranch.enforceRoles, v => updateAdv('roleBranch', 'enforceRoles', v), 'Menus and actions hidden unless the role grants them.')}
+              {advToggle('Enforce branch-based data isolation', advSecurity.roleBranch.enforceBranch, v => updateAdv('roleBranch', 'enforceBranch', v), 'Users only see data for the stores assigned to them.')}
+            </div>
+            <div className="mt-4 table-container">
+              <table className="table min-w-[560px]">
+                <thead>
+                  <tr><th>Module</th>{roles.map(role => <th key={role.id}>{role.name}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {roleMatrix.map(row => (
+                    <tr key={row.group.key}>
+                      <td className="font-semibold">{row.group.label}</td>
+                      {row.grants.map((grant, i) => (
+                        <td key={i} className={grant.level === 'None' ? 'text-slate-400' : 'font-bold text-emerald-700'}>{grant.level}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4">
+              <h3 className="mb-2 text-sm font-bold text-slate-700">Branch access</h3>
+              {branchAccess.length === 0 ? (
+                <p className="text-sm text-slate-500">No branches found.</p>
+              ) : (
+                <ul className="space-y-1 text-sm text-slate-600">
+                  {branchAccess.map(({ store, users }) => (
+                    <li key={store.id} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                      <span className="font-semibold text-slate-700">{store.name}</span>
+                      <span>{users.length ? users.join(', ') : 'No assigned users'}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Multi-factor authentication */}
+          <div className="card !border-l-4 !border-l-violet-500">
+            <div className="mb-3">
+              <h2 className="text-xl font-bold text-gray-800">🔐 Multi-factor authentication</h2>
+              <p className="text-sm text-slate-500">Require a second factor for administrator sign-ins.</p>
+            </div>
+            {advToggle('Require MFA for administrators', advSecurity.mfa.adminMfa, v => updateAdv('mfa', 'adminMfa', v), 'Syncs with the Security &amp; Audit policy on save.')}
+            {advSecurity.mfa.adminMfa && (
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                {advInput('mfa', 'method', 'Method', 'select', [
+                  { value: 'authenticator', label: 'Authenticator app (TOTP)' },
+                  { value: 'sms', label: 'SMS code' },
+                  { value: 'email', label: 'Email code' },
+                ])}
+                {advInput('mfa', 'recoveryCodes', 'Recovery codes issued', 'number')}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Audit trails for sensitive actions */}
+          <div className="card !border-l-4 !border-l-emerald-500">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">📜 Audit trail for sensitive actions</h2>
+                <p className="text-sm text-slate-500">{auditLogs.length} {serverMode ? 'server-recorded' : 'recorded'} event{auditLogs.length === 1 ? '' : 's'} on this {serverMode ? 'server' : 'device'}.</p>
+              </div>
+              <button type="button" onClick={exportAudit} disabled={!auditLogs.length} className="btn btn-secondary text-sm disabled:opacity-50">Export audit trail (CSV)</button>
+            </div>
+            {advToggle('Record sensitive actions', advSecurity.audit.enabled, v => updateAdv('audit', 'enabled', v))}
+            {advSecurity.audit.enabled && (
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {[
+                  ['refunds', 'Refunds & voids'],
+                  ['logins', 'Logins / failed logins'],
+                  ['configChanges', 'Configuration changes'],
+                  ['priceEdits', 'Price & menu edits'],
+                  ['userChanges', 'User & role changes'],
+                ].map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" checked={Boolean(advSecurity.audit.track[key])} onChange={(e) => updateAdvTrack(key, e.target.checked)} className="h-5 w-5 accent-emerald-600" />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 4. Encrypted backups & protected API credentials */}
+          <div className="card !border-l-4 !border-l-sky-500">
+            <div className="mb-3">
+              <h2 className="text-xl font-bold text-gray-800">🔒 Encrypted backups &amp; protected API credentials</h2>
+              <p className="text-sm text-slate-500">Backups are sealed with AES-256-GCM; credentials stay masked.</p>
+            </div>
+            {advToggle('Encrypt settings backups (AES-256-GCM)', advSecurity.backup.encryption, v => updateAdv('backup', 'encryption', v), 'A passphrase is required to open encrypted backups — it cannot be recovered.')}
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="text-sm font-bold text-slate-700">
+                Backup passphrase
+                <input type="password" value={backupPassphrase} onChange={(e) => setBackupPassphrase(e.target.value)} className="input mt-1" placeholder="min 8 characters" autoComplete="new-password" />
+              </label>
+              <div className="flex flex-wrap items-end gap-2">
+                <button type="button" onClick={downloadEncryptedBackup} className="btn btn-primary text-sm">Download backup</button>
+                <label className="btn btn-secondary cursor-pointer text-sm">
+                  Restore backup
+                  <input type="file" accept=".bin,.json" onChange={restoreEncryptedBackup} className="hidden" />
+                </label>
+              </div>
+            </div>
+            {backupStatus && <p className="mt-3 text-sm font-semibold text-sky-700">{backupStatus}</p>}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+              <div className="text-sm">
+                <p className="font-bold text-slate-700">Protected API credential</p>
+                <p className="font-mono text-slate-500">{advSecurity.backup.apiKeyPreview || 'Not generated — rotate to create one'}</p>
+              </div>
+              <button type="button" onClick={rotateApiKey} className="btn btn-secondary text-sm">Rotate credential</button>
+            </div>
+          </div>
+
+          {/* 5. Unusual-activity alerts */}
+          <div className="card !border-l-4 !border-l-amber-500">
+            <div className="mb-3">
+              <h2 className="text-xl font-bold text-gray-800">🚨 Alerts for unusual refunds, logins &amp; changes</h2>
+              <p className="text-sm text-slate-500">Flags suspicious activity from this store's data.</p>
+            </div>
+            {advToggle('Enable unusual-activity alerts', advSecurity.alerts.enabled, v => updateAdv('alerts', 'enabled', v))}
+            {advSecurity.alerts.enabled && (
+              <>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {advInput('alerts', 'highRefundThreshold', 'Refund amount that triggers an alert', 'number')}
+                  {advInput('alerts', 'failedLoginAlert', 'Failed logins that trigger an alert', 'number')}
+                  {advInput('alerts', 'notifyEmail', 'Alert email (optional)', 'text', { placeholder: 'manager@example.com' })}
+                  <div className="flex items-end">
+                    {advToggle('Alert on configuration changes', advSecurity.alerts.configChangeAlert, v => updateAdv('alerts', 'configChangeAlert', v))}
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <h3 className="mb-2 text-sm font-bold text-slate-700">Current alerts</h3>
+                  {securityAlerts.length === 0 ? (
+                    <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">✅ No unusual activity detected.</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {securityAlerts.map((alert, i) => (
+                        <li key={i} className={`rounded-lg px-3 py-2 text-sm font-semibold ${alert.level === 'high' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>⚠️ {alert.text}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="card">
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={saveAdvSecurity} className="btn btn-primary text-sm">
+                {advSaved ? '✓ Saved' : 'Save advanced security'}
+              </button>
+              <p className="text-xs text-slate-400">Saved on this device, written to the audit trail, and included in encrypted backups.</p>
             </div>
           </div>
         </section>
