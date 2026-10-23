@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { userApi, restaurantApi } from '../api';
 
 const defaultEmployees = [
   {
@@ -141,11 +142,32 @@ const emptyEmployeeForm = () => ({
   education: '',
   experience: '',
   documents: '',
-  notes: ''
+  notes: '',
+  files: [],
+  linkedUserId: '',
+  linkedUsername: ''
 });
 
+const MAX_DOC_SIZE = 2 * 1024 * 1024; // 2 MB per document (localStorage constraint)
+
+const documentCategories = ['Passport', 'Visa', 'Emirates ID', 'Work Permit', 'Contract', 'Certificate', 'Insurance', 'Photo', 'Other'];
+
+const readFileAsDataURL = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+
+const formatBytes = (bytes) => {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
+};
+
 export default function HRMS() {
-  const { user } = useAuth();
+  const { user, activeRestaurant } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAttendanceForm, setShowAttendanceForm] = useState(false);
@@ -169,10 +191,49 @@ export default function HRMS() {
   const [attendance, setAttendance] = useState(() => JSON.parse(localStorage.getItem('pos_attendance') || '[]'));
   const [leaves, setLeaves] = useState(() => JSON.parse(localStorage.getItem('pos_leaves') || '[]'));
   const [attendanceNotifications, setAttendanceNotifications] = useState(() => JSON.parse(localStorage.getItem('pos_hrms_attendance_notifications') || '[]'));
+  const [recordProfileId, setRecordProfileId] = useState(null);
+  const [docMessage, setDocMessage] = useState('');
+  const [linkableUsers, setLinkableUsers] = useState([]);
+  const [userRoles, setUserRoles] = useState([]);
+  const [restaurantsList, setRestaurantsList] = useState([]);
+  const [accountAvailability, setAccountAvailability] = useState({ status: 'loading', message: '' });
+  const [activationLink, setActivationLink] = useState('');
 
   useEffect(() => {
-    localStorage.setItem('pos_hrms_employees', JSON.stringify(employees));
+    try {
+      localStorage.setItem('pos_hrms_employees', JSON.stringify(employees));
+    } catch (storageError) {
+      console.error('Unable to persist HRMS employees:', storageError);
+      setDocMessage('Browser storage limit reached — documents were not saved. Remove some files or upload smaller ones (max 2 MB each).');
+    }
   }, [employees]);
+
+  // Load user accounts (for HRMS ↔ Users linking). Requires the server build.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [usersRes, rolesRes, restaurantsRes] = await Promise.all([
+          userApi.getAll(),
+          userApi.getRoles(),
+          restaurantApi.getAll(),
+        ]);
+        if (cancelled) return;
+        setLinkableUsers(usersRes.data || []);
+        setUserRoles(rolesRes.data || []);
+        setRestaurantsList(restaurantsRes.data || []);
+        setAccountAvailability({ status: 'ready', message: '' });
+      } catch (err) {
+        if (cancelled) return;
+        const code = err?.response?.status;
+        const message = code === 403
+          ? 'Your account lacks permission to view user accounts, so linking is disabled.'
+          : 'User-account linking needs the server build (currently unavailable in this view).';
+        setAccountAvailability({ status: 'unavailable', message });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('pos_attendance', JSON.stringify(attendance));
@@ -776,6 +837,9 @@ export default function HRMS() {
       commissionRate: Number(employeeForm.commissionRate || 0),
       notes: employeeForm.notes.trim(),
       documents: employeeForm.documents.trim(),
+      files: employeeForm.files || [],
+      linkedUserId: employeeForm.linkedUserId || '',
+      linkedUsername: employeeForm.linkedUsername || '',
     };
 
     if (editingEmployeeId) {
@@ -793,7 +857,7 @@ export default function HRMS() {
   };
 
   const handleEditEmployee = (employee) => {
-    setEmployeeForm(employee);
+    setEmployeeForm({ ...employee, files: employee.files || [], linkedUserId: employee.linkedUserId || '', linkedUsername: employee.linkedUsername || '' });
     setEditingEmployeeId(employee.id);
     setShowEmployeeForm(true);
   };
@@ -801,6 +865,179 @@ export default function HRMS() {
   const handleDeleteEmployee = (id) => {
     if (window.confirm('Delete this employee record from HRMS?')) {
       setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+    }
+  };
+
+  const buildDocumentEntries = async (fileList) => {
+    const files = Array.from(fileList || []);
+    const entries = [];
+    setDocMessage('');
+    for (const file of files) {
+      if (file.size > MAX_DOC_SIZE) {
+        setDocMessage(`"${file.name}" is larger than 2 MB and was skipped.`);
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataURL(file);
+        entries.push({
+          id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          category: 'Other',
+          uploadedAt: new Date().toISOString(),
+          dataUrl,
+        });
+      } catch (readError) {
+        console.error('Unable to read document', file.name, readError);
+        setDocMessage(`"${file.name}" could not be read. Try another file.`);
+      }
+    }
+    return entries;
+  };
+
+  const attachDocumentsToForm = async (event) => {
+    const entries = await buildDocumentEntries(event.target.files);
+    if (entries.length) {
+      setEmployeeForm((prev) => ({ ...prev, files: [...(prev.files || []), ...entries] }));
+    }
+    event.target.value = '';
+  };
+
+  const removeFormDocument = (fileId) => {
+    setEmployeeForm((prev) => ({ ...prev, files: (prev.files || []).filter((doc) => doc.id !== fileId) }));
+  };
+
+  const updateFormDocumentMeta = (fileId, patch) => {
+    setEmployeeForm((prev) => ({
+      ...prev,
+      files: (prev.files || []).map((doc) => (doc.id === fileId ? { ...doc, ...patch } : doc)),
+    }));
+  };
+
+  const uploadDocumentsForEmployee = async (employeeId, fileList) => {
+    const entries = await buildDocumentEntries(fileList);
+    if (!entries.length) return;
+    setEmployees((prev) => prev.map((emp) => (
+      emp.id === employeeId ? { ...emp, files: [...(emp.files || []), ...entries] } : emp
+    )));
+  };
+
+  const setEmployeeDocumentCategory = (employeeId, fileId, category) => {
+    setEmployees((prev) => prev.map((emp) => (
+      emp.id === employeeId
+        ? { ...emp, files: (emp.files || []).map((doc) => (doc.id === fileId ? { ...doc, category } : doc)) }
+        : emp
+    )));
+  };
+
+  const deleteEmployeeDocument = (employeeId, fileId) => {
+    if (!window.confirm('Delete this document from the employee record?')) return;
+    setEmployees((prev) => prev.map((emp) => (
+      emp.id === employeeId ? { ...emp, files: (emp.files || []).filter((doc) => doc.id !== fileId) } : emp
+    )));
+  };
+
+  const downloadEmployeeDocument = (employee, file) => {
+    const link = document.createElement('a');
+    link.href = file.dataUrl;
+    link.download = file.name || `${employee.empCode || 'employee'}-document`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const openRecordProfile = (employee) => {
+    setDocMessage('');
+    setActivationLink('');
+    setRecordProfileId(employee.id);
+  };
+
+  const closeRecordProfile = () => setRecordProfileId(null);
+
+  const recordProfile = employees.find((emp) => emp.id === recordProfileId) || null;
+
+  const recordField = (label, value) => (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-sm font-medium text-gray-800">{value || '—'}</p>
+    </div>
+  );
+
+  const deriveUsername = (employee) => {
+    const base = (employee.email || '').split('@')[0] || String(employee.empCode || '').toLowerCase();
+    const cleaned = base.replace(/[^a-zA-Z0-9._]/g, '');
+    return cleaned || `emp${employee.id}`;
+  };
+
+  const defaultRoleIdForEmployee = () => {
+    if (!userRoles.length) return null;
+    const nonAdmin = userRoles.find((role) => String(role.name).toLowerCase() !== 'admin');
+    return (nonAdmin || userRoles[0]).id;
+  };
+
+  const defaultRestaurantIdsForEmployee = () => {
+    const ids = [];
+    if (activeRestaurant?.id) ids.push(Number(activeRestaurant.id));
+    if (!ids.length && restaurantsList.length) ids.push(Number(restaurantsList[0].id));
+    return ids;
+  };
+
+  const setFormLinkedUser = (userId) => {
+    setEmployeeForm((prev) => {
+      if (!userId) return { ...prev, linkedUserId: '', linkedUsername: '' };
+      const chosen = linkableUsers.find((u) => String(u.id) === String(userId));
+      return { ...prev, linkedUserId: userId, linkedUsername: chosen?.username || '' };
+    });
+  };
+
+  const linkExistingUserToEmployee = (employeeId, userId) => {
+    if (!userId) {
+      setEmployees((prev) => prev.map((emp) => (emp.id === employeeId ? { ...emp, linkedUserId: '', linkedUsername: '' } : emp)));
+      return;
+    }
+    const chosen = linkableUsers.find((u) => String(u.id) === String(userId));
+    setEmployees((prev) => prev.map((emp) => (
+      emp.id === employeeId ? { ...emp, linkedUserId: userId, linkedUsername: chosen?.username || '' } : emp
+    )));
+  };
+
+  const createLoginForEmployee = async (employee) => {
+    if (accountAvailability.status !== 'ready') {
+      setDocMessage(accountAvailability.message || 'User-account linking is unavailable.');
+      return;
+    }
+    if (!employee?.email && !employee?.empCode) {
+      setDocMessage('Add an email or employee ID before creating a login account.');
+      return;
+    }
+    const roleId = defaultRoleIdForEmployee();
+    const restaurantIds = defaultRestaurantIdsForEmployee();
+    if (!roleId || !restaurantIds.length) {
+      setDocMessage('No role or branch is available to create a login account.');
+      return;
+    }
+    try {
+      const { data } = await userApi.create({
+        full_name: employee.fullName,
+        employee_id: employee.empCode,
+        username: deriveUsername(employee),
+        email: employee.email || '',
+        role_id: Number(roleId),
+        restaurant_ids: restaurantIds,
+      });
+      const created = data.user;
+      setLinkableUsers((prev) => [...prev.filter((u) => String(u.id) !== String(created.id)), created]);
+      setEmployees((prev) => prev.map((emp) => (
+        emp.id === employee.id ? { ...emp, linkedUserId: created.id, linkedUsername: created.username } : emp
+      )));
+      if (data.activation_token) {
+        setActivationLink(`${window.location.origin}/activate?token=${encodeURIComponent(data.activation_token)}`);
+      }
+      setDocMessage('');
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Unknown error.';
+      setDocMessage(`Could not create login account: ${msg}`);
     }
   };
 
@@ -1411,14 +1648,66 @@ export default function HRMS() {
                         <input value={employeeForm.experience} onChange={(e) => setEmployeeForm({ ...employeeForm, experience: e.target.value })} className="input" />
                       </div>
                       <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Documents</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Document Notes</label>
                         <input value={employeeForm.documents} onChange={(e) => setEmployeeForm({ ...employeeForm, documents: e.target.value })} className="input" placeholder="Passport, visa, certificates, insurance" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Upload Documents</label>
+                        <input
+                          type="file"
+                          multiple
+                          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+                          onChange={attachDocumentsToForm}
+                          className="block w-full cursor-pointer text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-700 hover:file:bg-primary-100"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Max 2 MB each. Files are stored in this browser for the records portal.</p>
+                        {docMessage && <p role="alert" className="mt-2 text-sm font-medium text-amber-600">{docMessage}</p>}
+                        {(employeeForm.files || []).length > 0 && (
+                          <div className="mt-3 space-y-2">
+                            {(employeeForm.files || []).map((doc) => (
+                              <div key={doc.id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-gray-800">{doc.name}</p>
+                                  <p className="text-xs text-gray-500">{formatBytes(doc.size)} · {doc.type || 'file'}</p>
+                                </div>
+                                <div className="flex flex-shrink-0 items-center gap-2">
+                                  <select value={doc.category} onChange={(e) => updateFormDocumentMeta(doc.id, { category: e.target.value })} className="input py-1 text-xs">
+                                    {documentCategories.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
+                                  </select>
+                                  <button type="button" onClick={() => removeFormDocument(doc.id)} className="text-red-600 font-bold">Remove</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                         <textarea value={employeeForm.notes} onChange={(e) => setEmployeeForm({ ...employeeForm, notes: e.target.value })} rows="3" className="input" />
                       </div>
                     </div>
+                  </div>
+
+                  <div className="border-t pt-6">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4">User Account Link</h3>
+                    {accountAvailability.status === 'unavailable' ? (
+                      <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">{accountAvailability.message}</p>
+                    ) : (
+                      <div className="max-w-md">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Linked Login Account</label>
+                        <select value={employeeForm.linkedUserId || ''} onChange={(e) => setFormLinkedUser(e.target.value)} className="input" disabled={accountAvailability.status === 'loading'}>
+                          <option value="">— No linked account —</option>
+                          {linkableUsers.map((u) => (
+                            <option key={u.id} value={u.id}>{u.username}{u.role_name ? ` (${u.role_name})` : ''}</option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {accountAvailability.status === 'loading'
+                            ? 'Loading user accounts…'
+                            : 'Link this employee to an existing login. To create a new login, save the employee then use “Create login account” in the records portal.'}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex justify-end gap-3 pt-4 border-t">
@@ -1444,6 +1733,7 @@ export default function HRMS() {
                   <th>Status</th>
                   <th>Location</th>
                   <th>Join Date</th>
+                  <th>Documents</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1472,7 +1762,18 @@ export default function HRMS() {
                     </td>
                     <td>{emp.workLocation}</td>
                     <td>{emp.joinDate}</td>
-                    <td className="space-x-3">
+                    <td>
+                      <button type="button" onClick={() => openRecordProfile(emp)} className="text-left">
+                        <span className={`text-sm font-semibold ${
+                          (emp.files || []).length ? 'text-primary-700 hover:underline' :
+                          emp.documents ? 'text-amber-600' : 'text-gray-400'
+                        }`}>
+                          {(emp.files || []).length ? `${(emp.files || []).length} file(s)` : emp.documents ? 'Notes only' : 'None'}
+                        </span>
+                      </button>
+                    </td>
+                    <td className="space-x-3 whitespace-nowrap">
+                      <button onClick={() => openRecordProfile(emp)} className="text-blue-600 font-bold">View</button>
                       <button onClick={() => handleEditEmployee(emp)} className="text-primary-600 font-bold">Edit</button>
                       <button onClick={() => handleDeleteEmployee(emp.id)} className="text-red-600 font-bold">Delete</button>
                     </td>
@@ -1481,6 +1782,149 @@ export default function HRMS() {
               </tbody>
             </table>
           </div>
+
+          {recordProfile && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+              <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="flex items-start justify-between gap-4 border-b bg-gray-50 px-6 py-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Employee Records Portal</p>
+                    <h2 className="text-2xl font-bold text-gray-800">{recordProfile.fullName}</h2>
+                    <p className="text-sm text-gray-500">{recordProfile.empCode} · {recordProfile.designation} · {recordProfile.department}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => { setEmployeeForm({ ...recordProfile, files: recordProfile.files || [] }); setEditingEmployeeId(recordProfile.id); setShowEmployeeForm(true); closeRecordProfile(); }} className="btn btn-secondary whitespace-nowrap">Edit Profile</button>
+                    <button type="button" onClick={closeRecordProfile} className="text-gray-500 hover:text-gray-700">✕</button>
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
+                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${
+                    recordProfile.employmentStatus === 'Active' ? 'bg-green-100 text-green-700' :
+                    recordProfile.employmentStatus === 'Probation' ? 'bg-yellow-100 text-yellow-700' :
+                    recordProfile.employmentStatus === 'On Leave' ? 'bg-blue-100 text-blue-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>{recordProfile.employmentStatus}</span>
+
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800 mb-3">Employment</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {recordField('Email', recordProfile.email)}
+                      {recordField('Phone', recordProfile.phone)}
+                      {recordField('Employee Type', recordProfile.employeeType)}
+                      {recordField('Work Location', recordProfile.workLocation)}
+                      {recordField('Join Date', recordProfile.joinDate)}
+                      {recordField('Reporting Manager', recordProfile.manager)}
+                      {recordField('Commission', `${Number(recordProfile.commissionRate || 0).toFixed(2)}% · ${recordProfile.commissionBasis || '—'}`)}
+                      {recordField('Probation End', recordProfile.probationEnd)}
+                      {recordField('Nationality', recordProfile.nationality)}
+                      {recordField('Gender', recordProfile.gender)}
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-5">
+                    <h3 className="text-lg font-bold text-gray-800 mb-3">Compliance & Identity</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {recordField('Passport', recordProfile.passportNumber)}
+                      {recordField('Passport Expiry', recordProfile.passportExpiry)}
+                      {recordField('Emirates ID', recordProfile.emiratesId)}
+                      {recordField('Emirates ID Expiry', recordProfile.emiratesIdExpiry)}
+                      {recordField('Visa Number', recordProfile.visaNumber)}
+                      {recordField('Visa Expiry', recordProfile.visaExpiry)}
+                      {recordField('Work Permit', recordProfile.workPermitNumber)}
+                      {recordField('Work Permit Expiry', recordProfile.workPermitExpiry)}
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-5">
+                    <h3 className="text-lg font-bold text-gray-800 mb-3">Emergency & Background</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {recordField('Emergency Contact', recordProfile.emergencyName)}
+                      {recordField('Emergency Phone', recordProfile.emergencyPhone)}
+                      {recordField('Relationship', recordProfile.relationship)}
+                      {recordField('Education', recordProfile.education)}
+                      {recordField('Experience', recordProfile.experience)}
+                    </div>
+                    {recordProfile.address && <div className="mt-3">{recordField('Address', recordProfile.address)}</div>}
+                    {recordProfile.documents && <div className="mt-3">{recordField('Document Notes', recordProfile.documents)}</div>}
+                    {recordProfile.notes && <div className="mt-3">{recordField('Notes', recordProfile.notes)}</div>}
+                  </div>
+
+                  <div className="border-t pt-5">
+                    <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <h3 className="text-lg font-bold text-gray-800">Documents ({(recordProfile.files || []).length})</h3>
+                      <label className="btn btn-primary cursor-pointer">
+                        Upload Document
+                        <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" className="hidden" onChange={(e) => { uploadDocumentsForEmployee(recordProfile.id, e.target.files); e.target.value = ''; }} />
+                      </label>
+                    </div>
+                    {docMessage && <p role="alert" className="mb-3 text-sm font-medium text-amber-600">{docMessage}</p>}
+                    {(recordProfile.files || []).length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">No documents uploaded yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {(recordProfile.files || []).map((doc) => (
+                          <div key={doc.id} className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-gray-800">{doc.name}</p>
+                              <p className="text-xs text-gray-500">{formatBytes(doc.size)} · {doc.type || 'file'} · Uploaded {new Date(doc.uploadedAt).toLocaleString()}</p>
+                            </div>
+                            <div className="flex flex-shrink-0 items-center gap-2">
+                              <select value={doc.category || 'Other'} onChange={(e) => setEmployeeDocumentCategory(recordProfile.id, doc.id, e.target.value)} className="input py-1 text-xs">
+                                {documentCategories.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
+                              </select>
+                              <button type="button" onClick={() => downloadEmployeeDocument(recordProfile, doc)} className="text-blue-600 font-bold">Download</button>
+                              <button type="button" onClick={() => deleteEmployeeDocument(recordProfile.id, doc.id)} className="text-red-600 font-bold">Delete</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t pt-5">
+                    <h3 className="text-lg font-bold text-gray-800 mb-3">User Account</h3>
+                    {accountAvailability.status === 'unavailable' ? (
+                      <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">{accountAvailability.message}</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {recordProfile.linkedUsername ? (
+                          <p className="text-sm text-gray-700">Linked login: <span className="font-bold">@{recordProfile.linkedUsername}</span></p>
+                        ) : (
+                          <p className="text-sm text-gray-500">No login account linked to this employee.</p>
+                        )}
+                        <div className="flex flex-wrap items-end gap-3">
+                          <div className="min-w-[220px] flex-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Link existing account</label>
+                            <select value={recordProfile.linkedUserId || ''} onChange={(e) => linkExistingUserToEmployee(recordProfile.id, e.target.value)} className="input" disabled={accountAvailability.status === 'loading'}>
+                              <option value="">— None —</option>
+                              {linkableUsers.map((u) => (
+                                <option key={u.id} value={u.id}>{u.username}{u.role_name ? ` (${u.role_name})` : ''}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <button type="button" onClick={() => createLoginForEmployee(recordProfile)} disabled={accountAvailability.status !== 'ready' || !!recordProfile.linkedUserId} className="btn btn-primary whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">Create login account</button>
+                        </div>
+                        {activationLink && (
+                          <div className="rounded-lg bg-blue-50 p-3">
+                            <p className="mb-1 text-xs font-bold uppercase tracking-wide text-blue-700">One-time setup link (shown once)</p>
+                            <div className="flex items-center gap-2">
+                              <input readOnly value={activationLink} onFocus={(e) => e.target.select()} className="input text-xs" />
+                              <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(activationLink); } catch (copyError) { /* ignore */ } }} className="btn btn-secondary whitespace-nowrap">Copy</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end border-t px-6 py-4">
+                  <button type="button" onClick={closeRecordProfile} className="btn bg-gray-200 text-gray-700">Close</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

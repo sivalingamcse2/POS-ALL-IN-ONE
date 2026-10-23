@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { restaurantApi, settingsApi, userApi } from '../api';
+import StorageSettings from './StorageSettings';
+import Users from './Users';
 
 const permissionGroups = [
   { key: 'Dashboard', label: 'Dashboard', description: 'Overview and performance information' },
@@ -29,6 +32,15 @@ const blankRestaurant = {
   manager_name: '',
   operating_hours: '',
   seating_capacity: 0,
+};
+
+const blankAccessUser = {
+  full_name: '',
+  employee_id: '',
+  username: '',
+  email: '',
+  role_id: '',
+  restaurant_ids: [],
 };
 
 const restaurantErrorMessage = error => (
@@ -133,8 +145,17 @@ const emptyUserPermissions = () => permissionGroups.reduce((permissions, group) 
 }, {});
 
 export default function Settings() {
-  const { user, setUser, activeRestaurant, setActiveRestaurant, switchRestaurant, isAdmin: checkIsAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState('restaurant');
+  const { user, setUser, activeRestaurant, setActiveRestaurant, switchRestaurant, isAdmin: checkIsAdmin, hasPermission, idleSeconds, setIdleSeconds } = useAuth();
+  const [searchParams] = useSearchParams();
+  const validTabs = ['restaurant', 'tables', 'menu', 'hardware', 'security', 'storage', 'users'];
+  const urlTab = searchParams.get('tab');
+  const initialTab = validTabs.includes(urlTab) ? urlTab : 'restaurant';
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Keep the selected tab in sync when navigating via links like ?tab=storage
+  useEffect(() => {
+    if (validTabs.includes(urlTab)) setActiveTab(urlTab);
+  }, [urlTab]);
   
   // Get user's accessible restaurants
   const userRestaurants = user?.restaurants || [];
@@ -168,6 +189,12 @@ export default function Settings() {
   });
   const [userPermissions, setUserPermissions] = useState(() => readLocalObject('pos_user_permissions', {}));
   const [accessSaved, setAccessSaved] = useState(false);
+  // Add-user (create account) controls for the Users & Roles panel
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [userForm, setUserForm] = useState(blankAccessUser);
+  const [userSaving, setUserSaving] = useState(false);
+  const [userError, setUserError] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
   const [selectedMenuRestaurantId, setSelectedMenuRestaurantId] = useState(() => {
     const saved = localStorage.getItem('pos_settings_menu_restaurant_id');
     if (saved) return saved;
@@ -282,6 +309,103 @@ export default function Settings() {
       action: 'Saved demo permissions',
       details: `Saved permission overrides for ${selectedAccessUser?.username || 'selected user'}`,
     }, ...logs].slice(0, 200));
+  };
+
+  const toggleUserRestaurant = (id) => {
+    setUserForm(previous => {
+      const key = String(id);
+      const assigned = previous.restaurant_ids.map(String).includes(key);
+      return {
+        ...previous,
+        restaurant_ids: assigned
+          ? previous.restaurant_ids.filter(rid => String(rid) !== key)
+          : [...previous.restaurant_ids, key],
+      };
+    });
+  };
+
+  const openAddUserForm = () => {
+    setUserForm(blankAccessUser);
+    setUserError('');
+    setShowUserForm(true);
+  };
+
+  const submitCreateUser = async (event) => {
+    event.preventDefault();
+    setUserError('');
+    if (
+      !userForm.full_name.trim()
+      || !userForm.username.trim()
+      || !userForm.employee_id.trim()
+      || !userForm.role_id
+      || !userForm.restaurant_ids.length
+    ) {
+      setUserError('Name, employee ID, username, a role, and at least one branch are required.');
+      return;
+    }
+    const role = roles.find(r => String(r.id) === String(userForm.role_id));
+    const assignedRestaurants = restaurants.filter(r => (
+      userForm.restaurant_ids.map(String).includes(String(r.id))
+    ));
+    setUserSaving(true);
+    try {
+      if (serverMode) {
+        const { data } = await userApi.create({
+          full_name: userForm.full_name.trim(),
+          employee_id: userForm.employee_id.trim(),
+          username: userForm.username.trim(),
+          email: userForm.email.trim(),
+          role_id: Number(userForm.role_id),
+          restaurant_ids: userForm.restaurant_ids.map(Number),
+        });
+        const created = data.user;
+        setAccessUsers(previous => [...previous.filter(u => String(u.id) !== String(created.id)), created]);
+        setSelectedAccessUserId(created.id);
+        setInviteLink(`${window.location.origin}/activate?token=${encodeURIComponent(data.activation_token)}`);
+        settingsApi.getAuditLog()
+          .then(({ data: logs }) => setAuditLogs(normalizeServerLogs(logs)))
+          .catch(() => {});
+      } else {
+        // Demo mode: keep the new account in this browser so its privileges can be set.
+        const created = {
+          id: Date.now(),
+          full_name: userForm.full_name.trim(),
+          employee_id: userForm.employee_id.trim(),
+          username: userForm.username.trim(),
+          email: userForm.email.trim(),
+          role_id: Number(userForm.role_id),
+          role_name: role?.name || '',
+          restaurant_id: assignedRestaurants[0]?.id || '',
+          restaurant_ids: assignedRestaurants.map(r => Number(r.id)),
+          restaurants: assignedRestaurants,
+          restaurant_name: assignedRestaurants.map(r => r.name).join(', '),
+          account_status: 'pending_activation',
+          is_active: false,
+        };
+        const nextUsers = [...accessUsers, created];
+        setAccessUsers(nextUsers);
+        localStorage.setItem('pos_users', JSON.stringify(nextUsers));
+        setSelectedAccessUserId(created.id);
+        setAuditLogs(logs => [{
+          id: Date.now(),
+          timestamp: new Date().toISOString(),
+          username: user?.username || 'Admin',
+          action: 'Created user',
+          details: `Created ${created.username} (${created.role_name})`,
+        }, ...logs].slice(0, 200));
+      }
+      setShowUserForm(false);
+      setUserForm(blankAccessUser);
+    } catch (error) {
+      if (isServerUnreachable(error)) {
+        setServerMode(false);
+        setUserError('Server unreachable — it switched to demo mode. Save again to create the account locally.');
+      } else {
+        setUserError(error.response?.data?.error || error.message || 'Unable to create the user.');
+      }
+    } finally {
+      setUserSaving(false);
+    }
   };
   
   // Multi-Restaurant state
@@ -991,7 +1115,8 @@ export default function Settings() {
           { id: 'menu', label: 'Menu Assignment' },
           { id: 'hardware', label: 'Printers & Displays' },
           { id: 'security', label: 'Security & Audit' },
-          { id: 'advanced', label: 'Advanced Security' },
+          { id: 'storage', label: 'Storage & Cloud' },
+          ...(hasPermission('UserMgmt') ? [{ id: 'users', label: 'Users & Roles' }] : []),
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1365,6 +1490,30 @@ export default function Settings() {
 
       {activeTab === 'security' && (
         <section className="space-y-5">
+          <div className="card !border-l-4 !border-l-emerald-500">
+            <h3 className="text-lg font-bold text-slate-800">Idle Auto-Logout</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Automatically signs the user out after this period of inactivity. Any mouse, keyboard, or touch activity
+              resets the timer, and a warning countdown appears a few seconds before signing out. Saved on this device and applied immediately.
+            </p>
+            <label className="mt-4 block max-w-xs text-sm font-bold text-slate-700">
+              Sign out after
+              <select
+                value={idleSeconds}
+                onChange={(event) => setIdleSeconds(Number(event.target.value))}
+                className="input mt-1"
+              >
+                <option value={30}>30 seconds</option>
+                <option value={60}>1 minute</option>
+                <option value={120}>2 minutes</option>
+                <option value={300}>5 minutes</option>
+                <option value={600}>10 minutes</option>
+                <option value={900}>15 minutes</option>
+                <option value={1800}>30 minutes</option>
+                <option value={3600}>1 hour</option>
+              </select>
+            </label>
+          </div>
           <div className={`card !border-l-4 ${serverMode ? '!border-l-emerald-500' : '!border-l-amber-400'}`}>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="text-sm font-bold text-slate-700">
@@ -1951,6 +2100,10 @@ export default function Settings() {
 
       {/* Active Directory-style user permissions */}
       {activeTab === 'users' && (
+        <Users />
+      )}
+
+      {activeTab === 'users_privilege_hidden' && (
         <div className="space-y-6">
           <div className="card !border-l-4 !border-l-primary-500">
             <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
@@ -1959,17 +2112,20 @@ export default function Settings() {
                 <h2 className="text-2xl font-bold text-gray-800">User Access Permissions</h2>
                 <p className="text-gray-500 mt-1">{serverMode ? 'Role and outlet assignment save to the server automatically; action overrides remain a local matrix.' : 'Demo mode: role assignment, outlet assignment, and action overrides are stored in this browser.'}</p>
               </div>
-              <div className="w-full lg:w-80">
-                <label className="block text-sm font-bold text-gray-700 mb-1">Select user</label>
-                <select
-                  value={selectedAccessUserId}
-                  onChange={(event) => { setSelectedAccessUserId(event.target.value); setAccessSaved(false); }}
-                  className="input"
-                >
-                  {accessUsers.map(accessUser => (
-                    <option key={accessUser.id} value={accessUser.id}>{accessUser.username} ({accessUser.role_name})</option>
-                  ))}
-                </select>
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-end lg:w-96">
+                <div className="flex-1">
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Select user</label>
+                  <select
+                    value={selectedAccessUserId}
+                    onChange={(event) => { setSelectedAccessUserId(event.target.value); setAccessSaved(false); }}
+                    className="input"
+                  >
+                    {accessUsers.map(accessUser => (
+                      <option key={accessUser.id} value={accessUser.id}>{accessUser.username} ({accessUser.role_name})</option>
+                    ))}
+                  </select>
+                </div>
+                <button type="button" onClick={openAddUserForm} className="btn btn-primary whitespace-nowrap">+ Add user</button>
               </div>
             </div>
           </div>
@@ -2112,7 +2268,74 @@ export default function Settings() {
               </div>
             </>
           )}
+
+          {/* Add user modal */}
+          {showUserForm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <form onSubmit={submitCreateUser} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+                <h2 className="text-2xl font-bold text-gray-900">Add a user</h2>
+                <p className="mb-5 mt-1 text-sm text-gray-500">{serverMode ? 'A one-time password setup link is created after saving. No password is shown here.' : 'Demo mode: the account is stored in this browser only.'}</p>
+                {userError && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{userError}</p>}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {[
+                    ['full_name', 'Full name', 'text'],
+                    ['employee_id', 'Employee ID', 'text'],
+                    ['username', 'Username', 'text'],
+                    ['email', 'Email address', 'email'],
+                  ].map(([field, label, type]) => (
+                    <label key={field} className="text-sm font-semibold text-gray-700">
+                      {label}
+                      <input type={type} value={userForm[field]} onChange={event => setUserForm(previous => ({ ...previous, [field]: event.target.value }))} className="input mt-1" required={field !== 'email'} />
+                    </label>
+                  ))}
+                  <label className="text-sm font-semibold text-gray-700 sm:col-span-2">
+                    Role
+                    <select value={userForm.role_id} onChange={event => setUserForm(previous => ({ ...previous, role_id: event.target.value }))} className="input mt-1" required>
+                      <option value="">Select role</option>
+                      {roles.map(role => <option key={role.id} value={role.id} disabled={!isAdmin && role.name === 'Admin'}>{role.name}</option>)}
+                    </select>
+                  </label>
+                  <fieldset className="sm:col-span-2">
+                    <legend className="mb-2 text-sm font-semibold text-gray-700">Assigned branches</legend>
+                    <div className="grid gap-2 rounded-lg border border-gray-200 p-3 sm:grid-cols-2">
+                      {restaurants.map(restaurant => (
+                        <label key={restaurant.id} className="flex items-center gap-2 text-sm text-gray-700">
+                          <input type="checkbox" checked={userForm.restaurant_ids.map(String).includes(String(restaurant.id))} onChange={() => toggleUserRestaurant(restaurant.id)} />
+                          {restaurant.name}
+                        </label>
+                      ))}
+                      {!restaurants.length && <p className="text-sm text-amber-700">No branches are available.</p>}
+                    </div>
+                  </fieldset>
+                </div>
+                <div className="mt-6 flex justify-end gap-3">
+                  <button type="button" onClick={() => setShowUserForm(false)} className="btn border border-gray-300 bg-white text-gray-700">Cancel</button>
+                  <button type="submit" disabled={userSaving || !userForm.restaurant_ids.length} className="btn btn-primary disabled:opacity-50">{userSaving ? 'Saving…' : 'Create user'}</button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* One-time setup link modal */}
+          {inviteLink && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+              <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+                <h2 className="text-xl font-bold text-gray-900">Secure password setup link</h2>
+                <p className="my-3 text-sm text-gray-600">This single-use link expires in 24 hours and is shown only once. Share it with the user through a trusted channel.</p>
+                <input readOnly value={inviteLink} onFocus={event => event.target.select()} className="input text-sm" aria-label="User setup link" />
+                <div className="mt-5 flex justify-end gap-3">
+                  <button type="button" onClick={() => setInviteLink('')} className="btn border border-gray-300 bg-white text-gray-700">Close</button>
+                  <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(inviteLink); } catch { /* ignore */ } }} className="btn btn-primary">Copy setup link</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Storage & Cloud (moved from standalone page) */}
+      {activeTab === 'storage' && (
+        <StorageSettings embedded />
       )}
     </div>
   );

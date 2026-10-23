@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import storageEngine, { DEFAULT_ITEMS, DEFAULT_CATEGORIES } from '../services/storageEngine';
 
-export default function StorageSettings() {
+export default function StorageSettings({ embedded = false }) {
   const [mode, setMode] = useState(() => storageEngine.getStorageMode());
   const [businessMode, setBusinessMode] = useState(() => storageEngine.getBusinessMode());
   const [cloudUrl, setCloudUrl] = useState(() => storageEngine.getCloudUrl());
@@ -109,16 +109,24 @@ export default function StorageSettings() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className={`space-y-6 ${embedded ? '' : 'max-w-5xl mx-auto'}`}>
       {/* Page Title */}
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-extrabold text-gray-900 flex items-center gap-2">
-            <span>☁️</span> Cloud & Local Storage Management
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Configure offline resilience, cloud synchronization, automatic backups, and store architecture.
-          </p>
+          {embedded ? (
+            <p className="text-sm text-gray-500">
+              Configure offline resilience, cloud synchronization, automatic backups, and store architecture.
+            </p>
+          ) : (
+            <>
+              <h1 className="text-3xl font-extrabold text-gray-900 flex items-center gap-2">
+                <span>☁️</span> Cloud & Local Storage Management
+              </h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Configure offline resilience, cloud synchronization, automatic backups, and store architecture.
+              </p>
+            </>
+          )}
         </div>
 
         <button

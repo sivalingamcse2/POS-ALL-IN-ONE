@@ -6,12 +6,10 @@ import ActivateAccount from './pages/ActivateAccount';
 import Dashboard from './pages/Dashboard';
 import POS from './pages/POS';
 import SupermarketPOS from './pages/SupermarketPOS';
-import StorageSettings from './pages/StorageSettings';
 import MobilePOS from './pages/MobilePOS';
 import Menu from './pages/Menu';
 import Inventory from './pages/Inventory';
 import Reports from './pages/Reports';
-import Users from './pages/Users';
 import Settings from './pages/Settings';
 import CRM from './pages/CRM';
 import HRMS from './pages/HRMS';
@@ -91,8 +89,8 @@ function App() {
           </ProtectedRoute>
         } />
 
-        {/* Storage & Cloud Management */}
-        <Route path="storage" element={<StorageSettings />} />
+        {/* Storage & Cloud now lives inside Settings */}
+        <Route path="storage" element={<Navigate to="/settings?tab=storage" replace />} />
 
         <Route path="menu" element={
           <ProtectedRoute permission="Inventory">
@@ -111,7 +109,7 @@ function App() {
         } />
         <Route path="users" element={
           <ProtectedRoute permission="UserMgmt">
-            <Users />
+            <Navigate to="/settings?tab=users" replace />
           </ProtectedRoute>
         } />
         <Route path="crm" element={<CRM />} />

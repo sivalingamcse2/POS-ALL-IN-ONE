@@ -52,7 +52,27 @@ export default function Users() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [hrmsEmployees, setHrmsEmployees] = useState([]);
   const isAdmin = currentUser?.role_name === 'Admin' || currentUser?.role === 'Admin';
+
+  // HRMS employees live in localStorage (pos_hrms_employees). We read them here so the
+  // Users table can show which login account each HRMS record is linked to (by linkedUserId).
+  useEffect(() => {
+    const syncHrmsEmployees = () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('pos_hrms_employees') || '[]');
+        setHrmsEmployees(Array.isArray(saved) ? saved : []);
+      } catch (e) {
+        setHrmsEmployees([]);
+      }
+    };
+    syncHrmsEmployees();
+    window.addEventListener('storage', syncHrmsEmployees);
+    return () => window.removeEventListener('storage', syncHrmsEmployees);
+  }, [users]);
+
+  const linkedEmployeeFor = employee =>
+    hrmsEmployees.find(record => String(record.linkedUserId ?? '') === String(employee.id ?? '')) || null;
 
   const loadData = async () => {
     setLoading(true);
@@ -276,17 +296,21 @@ export default function Users() {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   const buildEmployeeTable = () => {
-    const columns = ['Employee ID', 'Name', 'Username', 'Email', 'Role', 'Restaurants', 'Status', 'Last login'];
-    const rows = filteredUsers.map(employee => [
-      employee.employee_id || '',
-      employee.full_name || employee.username || '',
-      employee.username || '',
-      employee.email || '',
-      employee.role_name || 'Unassigned',
-      employee.restaurant_name || '',
-      employee.account_status ? employee.account_status.replaceAll('_', ' ') : (employee.is_active ? 'active' : 'suspended'),
-      employee.last_login ? new Date(employee.last_login).toLocaleString() : 'Never',
-    ]);
+    const columns = ['Employee ID', 'Name', 'Username', 'Email', 'HRMS Record', 'Role', 'Restaurants', 'Status', 'Last login'];
+    const rows = filteredUsers.map(employee => {
+      const linkedEmployee = linkedEmployeeFor(employee);
+      return [
+        employee.employee_id || '',
+        employee.full_name || employee.username || '',
+        employee.username || '',
+        employee.email || '',
+        linkedEmployee ? `${linkedEmployee.fullName || linkedEmployee.name || ''}${linkedEmployee.empCode ? ` (${linkedEmployee.empCode})` : ''}` : 'Not linked',
+        employee.role_name || 'Unassigned',
+        employee.restaurant_name || '',
+        employee.account_status ? employee.account_status.replaceAll('_', ' ') : (employee.is_active ? 'active' : 'suspended'),
+        employee.last_login ? new Date(employee.last_login).toLocaleString() : 'Never',
+      ];
+    });
     return { columns, rows };
   };
 
@@ -413,17 +437,26 @@ export default function Users() {
         <div className="card overflow-hidden p-0">
           <div className="overflow-x-auto">
             <table className="table min-w-[900px]">
-              <thead><tr><th>Employee</th><th>Role</th><th>Restaurant access</th><th>Status</th><th>Last login</th><th className="text-right">Actions</th></tr></thead>
+              <thead><tr><th>Employee</th><th>HRMS Record</th><th>Role</th><th>Restaurant access</th><th>Status</th><th>Last login</th><th className="text-right">Actions</th></tr></thead>
               <tbody>
                 {filteredUsers.map(employee => {
                   const status = employee.account_status || (employee.is_active ? 'active' : 'suspended');
                   const active = status === 'active';
+                  const linkedEmployee = linkedEmployeeFor(employee);
                   return (
                     <tr key={employee.id}>
                       <td>
                         <p className="font-bold text-gray-900">{employee.full_name || employee.username}</p>
                         <p className="text-xs text-gray-500">{employee.employee_id || 'No employee ID'} · @{employee.username}</p>
                         <p className="text-xs text-gray-500">{employee.email || 'No email'}</p>
+                      </td>
+                      <td className="text-sm">
+                        {linkedEmployee ? (
+                          <span className="inline-flex flex-col">
+                            <span className="font-semibold text-gray-800">{linkedEmployee.fullName || linkedEmployee.name || '—'}</span>
+                            <span className="text-xs text-gray-500">{linkedEmployee.empCode || 'No code'}</span>
+                          </span>
+                        ) : <span className="text-xs text-gray-400">Not linked</span>}
                       </td>
                       <td><span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-bold text-primary-700">{employee.role_name || 'Unassigned'}</span></td>
                       <td className="max-w-[220px] whitespace-normal text-sm text-gray-600">{employee.restaurant_name || 'No restaurant assigned'}</td>
@@ -443,7 +476,7 @@ export default function Users() {
                     </tr>
                   );
                 })}
-                {!filteredUsers.length && <tr><td colSpan="6" className="py-10 text-center text-sm text-gray-500">No employees found.</td></tr>}
+                {!filteredUsers.length && <tr><td colSpan="7" className="py-10 text-center text-sm text-gray-500">No employees found.</td></tr>}
               </tbody>
             </table>
           </div>

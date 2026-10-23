@@ -3,6 +3,16 @@ import { authApi } from '../api';
 
 const AuthContext = createContext(null);
 
+// Idle auto-logout: default inactivity window (seconds) before the session ends.
+// Users can change this in Settings ▸ Security; the choice is stored per-device.
+const DEFAULT_IDLE_SECONDS = 30;
+const IDLE_STORAGE_KEY = 'pos_idle_timeout_seconds';
+
+const readIdleSeconds = () => {
+  const saved = Number(localStorage.getItem(IDLE_STORAGE_KEY));
+  return Number.isFinite(saved) && saved > 0 ? saved : DEFAULT_IDLE_SECONDS;
+};
+
 // Offline/demo session used when no API server is reachable (e.g. the static
 // GitHub Pages deployment). The rest of the app already runs on localStorage
 // data, so an admin session works fully client-side in that mode.
@@ -28,6 +38,13 @@ export function AuthProvider({ children }) {
     return saved ? JSON.parse(saved) : null;
   });
   const [loading, setLoading] = useState(true);
+  const [idleSeconds, setIdleSecondsState] = useState(readIdleSeconds);
+
+  const setIdleSeconds = (seconds) => {
+    const value = Number(seconds) > 0 ? Number(seconds) : DEFAULT_IDLE_SECONDS;
+    setIdleSecondsState(value);
+    localStorage.setItem(IDLE_STORAGE_KEY, String(value));
+  };
 
   useEffect(() => {
     // Initialize restaurants if empty
@@ -212,6 +229,8 @@ export function AuthProvider({ children }) {
     hasPermission,
     isAdmin,
     isAuthenticated: !!user,
+    idleSeconds,
+    setIdleSeconds,
   };
 
   return (
