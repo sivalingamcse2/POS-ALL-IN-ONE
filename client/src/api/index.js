@@ -41,7 +41,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      // Respect the router base (e.g. /POS-ALL-IN-ONE/) so the redirect does not
+      // escape to a top-level /login that 404s on GitHub Pages.
+      const base = (import.meta.env.VITE_ROUTER_BASE || '/').replace(/\/+$/, '');
+      window.location.href = `${base}/login`;
     }
     return Promise.reject(error);
   }

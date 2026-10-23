@@ -1,16 +1,24 @@
-# Render.com blueprint for SIVARA POS - single-service deployment.
+# Render.com blueprint for SIVARA POS.
 #
-# One web service serves BOTH the Express API (under /api) AND the built React
-# client (from client/dist). Because they share one origin, the SPA calls /api
-# directly and there are no CORS or GitHub Pages subpath issues.
+# A single web service serves BOTH the Express API (under /api) AND the built
+# React client (from client/dist), so the Render URL is a complete, same-origin
+# app. GitHub Pages can also host the UI and call this service's /api directly
+# (CORS is open and auth uses a Bearer header) once the client bundle is built
+# with VITE_API_URL set to this service's origin.
 #
-# Deploy: visit https://render.com/deploy?repo=sivalingamcse2/POS-ALL-IN-ONE
+# Deploy: https://render.com/deploy?repo=sivalingamcse2/POS-ALL-IN-ONE
 # or in the Render dashboard choose New + -> Blueprint and pick this repo.
 #
-# NOTE: The free tier uses the local JSON storage engine at <repo root>/local_db.json.
-# That file is EPHEMERAL on Render free instances - it resets when the service
-# restarts or after idle sleep. For durable data, attach a PostgreSQL instance
-# and set DATABASE_URL / DB_HOST.
+# DATA: uses a managed PostgreSQL instance for durable, shared storage. The
+# schema is created and the default admin seeded by the preDeployCommand
+# (node server/init-db.js) on every deploy. Default login: admin / admin123
+# (change it after first login).
+
+databases:
+  - name: pos-db
+    databaseName: pos
+    plan: free
+
 services:
   - type: web
     name: pos-app
@@ -18,6 +26,7 @@ services:
     plan: free
     rootDir: .
     buildCommand: npm --prefix server install && npm --prefix client install && npm --prefix client run build
+    preDeployCommand: node server/init-db.js
     startCommand: node server/index.js
     healthCheckPath: /api/health
     envVars:
@@ -31,4 +40,12 @@ services:
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 24h
-      # Leave DB_HOST unset so the app uses the local JSON storage engine.
+      # Connect the app to the managed Postgres above.
+      # If your Render plan/blueprint rejects `fromDatabase`, create a PostgreSQL
+      # service manually and paste its Internal Database URL here as a plain value:
+      #   - key: DATABASE_URL
+      #     value: postgresql://user:pass@host:port/pgdatabase
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pos-db
+          property: connectionString

@@ -85,14 +85,26 @@ let isPgConnected = false;
 let pool = null;
 
 try {
-  pool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT) || 5432,
-    database: process.env.DB_NAME || 'pos_db',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
-    connectionTimeoutMillis: 1500,
-  });
+  // Render (and most hosted Postgres providers) expose the database as a single
+  // connection string. Prefer DATABASE_URL when present; otherwise fall back to
+  // the discrete DB_HOST/DB_PORT/... fields used for local development.
+  const poolConfig = process.env.DATABASE_URL
+    ? {
+        connectionString: process.env.DATABASE_URL,
+        // Hosted providers serve TLS; rejectUnauthorized:false accepts managed certs.
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 5000,
+      }
+    : {
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT) || 5432,
+        database: process.env.DB_NAME || 'pos_db',
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || 'postgres',
+        connectionTimeoutMillis: 1500,
+      };
+
+  pool = new Pool(poolConfig);
 
   pool.on('error', (err) => {
     // Graceful error handle - do NOT call process.exit(-1)
