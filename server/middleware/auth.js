@@ -52,14 +52,16 @@ const authenticateToken = async (req, res, next) => {
   }
 
   // 0. ABSOLUTE BYPASS FOR GUESTS
-  if (req.originalUrl.includes('/api/public/') || 
-      req.originalUrl.includes('/api/pos/orders/guest') || 
-      req.originalUrl.includes('/api/pos/tables') || 
-      req.originalUrl.includes('/api/menu/items') || 
-      req.originalUrl.includes('/api/menu/categories')) {
-    
+  // These read paths are public for guest menu/QR browsing ONLY when no token is
+  // present. If a staff Bearer token IS supplied we must continue to full
+  // validation below so req.user is populated and checkPermission/Admin works.
+  const bypassPaths = ['/api/public/', '/api/pos/orders/guest', '/api/pos/tables', '/api/menu/items', '/api/menu/categories'];
+  if (bypassPaths.some(path => req.originalUrl.includes(path))) {
     if (req.method === 'GET' || req.method === 'POST' || req.method === 'OPTIONS') {
-      return next();
+      const guestToken = req.headers['authorization'] && req.headers['authorization'].split(' ')[1];
+      if (!guestToken) {
+        return next();
+      }
     }
   }
 

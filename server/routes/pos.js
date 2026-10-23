@@ -4,6 +4,7 @@ const posController = require('../controllers/posController');
 const { authenticateToken, checkPermission } = require('../middleware/auth');
 
 // 1. PROTECTED ROUTES (Staff Only)
+router.get('/tables', authenticateToken, checkPermission('POS', 'View'), posController.getAllTables);
 router.post('/tables', authenticateToken, checkPermission('POS', 'Create'), posController.createTable);
 router.put('/tables/:id', authenticateToken, checkPermission('POS', 'Edit'), posController.updateTable);
 router.delete('/tables/:id', authenticateToken, checkPermission('POS', 'Delete'), posController.deleteTable);

@@ -144,7 +144,6 @@ app.get('/api/public/kitchen-orders', posController.getKitchenOrders);
 app.patch('/api/public/kitchen-orders/:id/status', posController.updateKitchenOrderStatus);
 app.get('/api/pos/tables/:id', posController.getTableById);
 app.get('/api/menu/items', menuController.getAllItems);
-app.get('/api/menu/items/:id', menuController.getItemById);
 app.get('/api/menu/categories', menuController.getAllCategories);
 app.get('/api/menu/categories/:id', menuController.getCategoryById);
 
@@ -153,6 +152,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/restaurants', restaurantRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/menu', menuRoutes);
+// Public single-item lookup is registered AFTER the menu router so it does not
+// shadow the authenticated GET /api/menu/items/low-stock route.
+app.get('/api/menu/items/:id', menuController.getItemById);
 app.use('/api/pos', posRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/reports', reportRoutes);
