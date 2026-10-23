@@ -298,11 +298,16 @@ const emulateQuery = async (sqlText, params = []) => {
     const tableMatch = lower.match(/delete from\s+([a-zA-Z_]+)/);
     const tableName = tableMatch ? tableMatch[1] : '';
     const idParam = params[0];
-    if (localDb[tableName] && idParam) {
-      localDb[tableName] = localDb[tableName].filter(x => x.id !== parseInt(idParam));
+    if (localDb[tableName] && idParam !== undefined && idParam !== null) {
+      const targetId = parseInt(idParam);
+      const removed = localDb[tableName].find(x => Number(x.id) === targetId);
+      if (!removed) return { rows: [], rowCount: 0 };
+      localDb[tableName] = localDb[tableName].filter(x => Number(x.id) !== targetId);
       saveLocalDb();
-      return { rows: [], rowCount: 1 };
+      // DELETE ... RETURNING * -> surface the removed row so callers can detect success.
+      return { rows: [removed], rowCount: 1 };
     }
+    return { rows: [], rowCount: 0 };
   }
 
   return { rows: [], rowCount: 0 };
